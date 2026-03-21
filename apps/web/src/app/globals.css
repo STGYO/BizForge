@@ -1,0 +1,15 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-surface text-slate font-body;
+  background-image: radial-gradient(circle at 5% 10%, rgba(248, 112, 96, 0.2), transparent 35%),
+    radial-gradient(circle at 95% 0%, rgba(16, 37, 66, 0.14), transparent 32%);
+}

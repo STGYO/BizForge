@@ -1,0 +1,10 @@
+{
+  "name": "appointment-manager",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Booking links and calendar scheduling",
+  "permissions": ["contacts", "calendar", "automation"],
+  "activationEvents": ["onStartup", "customer.created"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}
