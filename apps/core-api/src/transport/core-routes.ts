@@ -43,7 +43,7 @@ export async function registerCoreRoutes(
     return runtime.automationEngine.listCatalog();
   });
 
-  server.post("/api/automation/rules", async (request) => {
+  server.post("/api/automation/rules", async (request, reply) => {
     const headers = orgHeaderSchema.parse(request.headers);
     const body = z
       .object({
@@ -70,12 +70,17 @@ export async function registerCoreRoutes(
       equals: condition.equals as unknown
     }));
 
-    return await runtime.automationEngine.createRule({
-      organizationId: headers["x-bizforge-org-id"],
-      triggerEvent: body.triggerEvent,
-      conditions: normalizedConditions,
-      actions: body.actions,
-      enabled: body.enabled
-    });
+    try {
+      return await runtime.automationEngine.createRule({
+        organizationId: headers["x-bizforge-org-id"],
+        triggerEvent: body.triggerEvent,
+        conditions: normalizedConditions,
+        actions: body.actions,
+        enabled: body.enabled
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid automation rule";
+      return reply.code(400).send({ error: message });
+    }
   });
 }

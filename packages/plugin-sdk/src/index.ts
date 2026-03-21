@@ -34,6 +34,22 @@ export interface PluginEventBus {
   subscribe(eventType: string, handler: (event: EventEnvelope) => Promise<void>): () => void;
 }
 
+export interface PluginRuntimeContext {
+  eventBus: PluginEventBus;
+}
+
+export type PluginHandler = (
+  input: {
+    body: unknown;
+    query: unknown;
+    params: unknown;
+    headers: unknown;
+    rawEvent?: EventEnvelope;
+    actionInput?: Record<string, unknown>;
+  },
+  context: PluginRuntimeContext
+) => Promise<unknown>;
+
 export interface PluginRouteDefinition {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
@@ -49,6 +65,7 @@ export interface AutomationTriggerDefinition {
 export interface AutomationActionDefinition {
   key: string;
   displayName: string;
+  handlerName?: string;
   inputSchema: Record<string, unknown>;
 }
 
@@ -57,4 +74,5 @@ export interface PluginRegistration {
   routes?: PluginRouteDefinition[];
   triggers?: AutomationTriggerDefinition[];
   actions?: AutomationActionDefinition[];
+  handlers?: Record<string, PluginHandler>;
 }

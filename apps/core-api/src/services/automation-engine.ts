@@ -42,9 +42,17 @@ export class AutomationEngine {
   initialize(): void {
     this.eventBus.subscribe("lead.generated", async (event) => this.executeForEvent(event));
     this.eventBus.subscribe("customer.created", async (event) => this.executeForEvent(event));
+    this.eventBus.subscribe("automation.action.requested", async (event) =>
+      this.executeRequestedAction(event)
+    );
   }
 
   async createRule(input: Omit<AutomationRule, "id">): Promise<AutomationRule> {
+    const validation = this.validateRuleDefinition(input.actions);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
     const created = await this.repository.create(input);
     return this.toAutomationRule(created);
   }
@@ -83,6 +91,36 @@ export class AutomationEngine {
     return { triggers, actions };
   }
 
+  validateRuleDefinition(actions: AutomationAction[]):
+    | { valid: true }
+    | { valid: false; error: string } {
+    for (const action of actions) {
+      const plugin = this.pluginEngine.list().find((item) => item.manifest.name === action.plugin);
+      if (!plugin) {
+        return { valid: false, error: `Unknown plugin: ${action.plugin}` };
+      }
+
+      if (!plugin.manifest.permissions.includes("automation")) {
+        return {
+          valid: false,
+          error: `Plugin ${action.plugin} is missing automation permission`
+        };
+      }
+
+      const hasAction = (plugin.registration.actions ?? []).some(
+        (pluginAction) => pluginAction.key === action.actionKey
+      );
+      if (!hasAction) {
+        return {
+          valid: false,
+          error: `Action ${action.actionKey} is not registered by plugin ${action.plugin}`
+        };
+      }
+    }
+
+    return { valid: true };
+  }
+
   private async executeForEvent(event: EventEnvelope): Promise<void> {
     const rules = await this.repository.listEnabledByTrigger(event.eventType);
 
@@ -117,6 +155,49 @@ export class AutomationEngine {
         });
       }
     }
+  }
+
+  private async executeRequestedAction(event: EventEnvelope): Promise<void> {
+    const payload = event.payload as {
+      plugin: string;
+      actionKey: string;
+      input: Record<string, unknown>;
+      triggerEventId: string;
+    };
+
+    const plugin = this.pluginEngine.list().find((item) => item.manifest.name === payload.plugin);
+    if (!plugin || plugin.status !== "enabled") {
+      return;
+    }
+
+    if (!plugin.manifest.permissions.includes("automation")) {
+      return;
+    }
+
+    const action = (plugin.registration.actions ?? []).find(
+      (registeredAction) => registeredAction.key === payload.actionKey
+    );
+    if (!action) {
+      return;
+    }
+
+    const handlerName = action.handlerName ?? payload.actionKey;
+    const handler = plugin.registration.handlers?.[handlerName];
+    if (!handler) {
+      return;
+    }
+
+    await handler(
+      {
+        body: undefined,
+        query: undefined,
+        params: undefined,
+        headers: undefined,
+        rawEvent: event,
+        actionInput: payload.input
+      },
+      { eventBus: this.eventBus }
+    );
   }
 
   private toAutomationRule(record: AutomationRuleRecord): AutomationRule {

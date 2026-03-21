@@ -1,7 +1,8 @@
 import type {
   PluginManifest,
   PluginPermission,
-  PluginRegistration
+  PluginRegistration,
+  PluginHandler
 } from "@bizforge/plugin-sdk";
 import manifest from "../../plugin.json" assert { type: "json" };
 
@@ -10,8 +11,64 @@ const typedManifest: PluginManifest = {
   permissions: manifest.permissions as PluginPermission[]
 };
 
+const listAppointments: PluginHandler = async () => {
+  return {
+    appointments: [
+      {
+        id: "appt-001",
+        customerId: "cust-001",
+        startsAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        status: "scheduled"
+      }
+    ]
+  };
+};
+
+const createAppointment: PluginHandler = async ({ body }, context) => {
+  const payload = (body ?? {}) as Record<string, unknown>;
+  const appointment = {
+    id: `appt-${Date.now()}`,
+    customerId: String(payload.customerId ?? "unknown"),
+    startsAt: String(payload.startsAt ?? new Date().toISOString()),
+    status: "scheduled"
+  };
+
+  await context.eventBus.publish({
+    eventId: `evt-${Date.now()}`,
+    eventType: "appointment.booked",
+    occurredAt: new Date().toISOString(),
+    organizationId: String(payload.organizationId ?? "demo-org"),
+    sourcePlugin: typedManifest.name,
+    schemaVersion: 1,
+    payload: {
+      appointmentId: appointment.id,
+      customerId: appointment.customerId,
+      startsAt: appointment.startsAt
+    }
+  });
+
+  return {
+    created: true,
+    appointment
+  };
+};
+
+const scheduleFollowUp: PluginHandler = async ({ actionInput }) => {
+  return {
+    scheduled: true,
+    type: "follow_up",
+    customerId: String(actionInput?.customerId ?? "unknown"),
+    offsetHours: Number(actionInput?.offsetHours ?? 24)
+  };
+};
+
 export const appointmentManagerPlugin: PluginRegistration = {
   manifest: typedManifest,
+  handlers: {
+    listAppointments,
+    createAppointment,
+    scheduleFollowUp
+  },
   routes: [
     {
       method: "GET",
@@ -35,6 +92,7 @@ export const appointmentManagerPlugin: PluginRegistration = {
     {
       key: "schedule_follow_up",
       displayName: "Schedule Follow Up",
+      handlerName: "scheduleFollowUp",
       inputSchema: {
         type: "object",
         properties: {
