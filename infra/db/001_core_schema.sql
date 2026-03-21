@@ -73,3 +73,11 @@ CREATE TABLE IF NOT EXISTS contacts (
   phone TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id UUID PRIMARY KEY,
+  plugin_name TEXT,
+  migration_name TEXT NOT NULL,
+  executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (plugin_name, migration_name)
+);

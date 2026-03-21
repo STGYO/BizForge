@@ -1,26 +1,49 @@
-const installedPlugins = [
-  "Lead Generator",
-  "Appointment Manager",
-  "CRM",
-  "WhatsApp Automation",
-  "Invoice Generator",
-  "Analytics"
-];
+export interface DashboardPlugin {
+  name: string;
+  version: string;
+  status: "enabled" | "disabled";
+}
 
-export function DashboardShell() {
+interface DashboardShellProps {
+  plugins: DashboardPlugin[];
+  pluginLoadError: string | null;
+}
+
+export function DashboardShell({ plugins, pluginLoadError }: DashboardShellProps) {
   return (
     <div className="min-h-screen p-4 md:p-6">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 rounded-3xl bg-white/70 p-4 shadow-lg backdrop-blur md:grid-cols-[260px_1fr] md:p-6">
         <aside className="rounded-2xl bg-shell p-4 text-white">
           <h1 className="font-display text-2xl">BizForge</h1>
           <p className="mt-1 text-sm text-white/70">Installed plugins</p>
-          <ul className="mt-5 space-y-2">
-            {installedPlugins.map((plugin) => (
-              <li key={plugin} className="rounded-xl bg-white/10 px-3 py-2 text-sm">
-                {plugin}
-              </li>
-            ))}
-          </ul>
+          {pluginLoadError ? (
+            <p className="mt-5 rounded-xl bg-red-500/20 px-3 py-2 text-sm text-red-100">
+              {pluginLoadError}
+            </p>
+          ) : plugins.length === 0 ? (
+            <p className="mt-5 rounded-xl bg-white/10 px-3 py-2 text-sm text-white/80">
+              No plugins loaded.
+            </p>
+          ) : (
+            <ul className="mt-5 space-y-2">
+              {plugins.map((plugin) => (
+                <li key={plugin.name} className="rounded-xl bg-white/10 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{plugin.name}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        plugin.status === "enabled"
+                          ? "bg-emerald-400/30 text-emerald-100"
+                          : "bg-amber-400/30 text-amber-100"
+                      }`}
+                    >
+                      {plugin.status}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </aside>
 
         <section className="space-y-4">

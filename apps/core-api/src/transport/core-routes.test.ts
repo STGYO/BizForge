@@ -30,6 +30,64 @@ function createRuntimeStub(): BizForgeRuntime {
   };
 }
 
+function createRuntimeStubWithRules(
+  rules: Array<{ actions: Array<{ plugin: string }> }>
+): BizForgeRuntime {
+  return {
+    persistence: "in-memory",
+    eventBus: {} as BizForgeRuntime["eventBus"],
+    pluginEngine: {
+      list: () => [
+        {
+          manifest: {
+            name: "appointment-manager",
+            version: "1.0.0",
+            author: "BizForge",
+            permissions: ["automation"],
+            activationEvents: ["onStartup"],
+            backendEntry: "dist/server/index.js",
+            frontendEntry: "dist/ui/index.js"
+          },
+          status: "enabled",
+          rootPath: "plugins/appointment-manager",
+          registration: {
+            manifest: {
+              name: "appointment-manager",
+              version: "1.0.0",
+              author: "BizForge",
+              permissions: ["automation"],
+              activationEvents: ["onStartup"],
+              backendEntry: "dist/server/index.js",
+              frontendEntry: "dist/ui/index.js"
+            },
+            routes: [],
+            triggers: [],
+            actions: []
+          }
+        }
+      ],
+      disable: () => true,
+      enable: () => true,
+      getLoadReport: () => ({
+        scannedDirectories: 1,
+        loadedPlugins: 1,
+        skippedPlugins: 0,
+        failedPlugins: []
+      })
+    } as unknown as BizForgeRuntime["pluginEngine"],
+    automationEngine: {
+      initialize: () => {},
+      listRules: async () => rules as unknown as Array<
+        Awaited<ReturnType<BizForgeRuntime["automationEngine"]["listRules"]>>[number]
+      >,
+      listCatalog: () => ({ triggers: [], actions: [] }),
+      createRule: async () => {
+        throw new Error("Unknown plugin: unknown-plugin");
+      }
+    } as unknown as BizForgeRuntime["automationEngine"]
+  };
+}
+
 test("returns health payload", async () => {
   const app = Fastify();
   await registerCoreRoutes(app, createRuntimeStub());
@@ -135,6 +193,69 @@ test("returns 400 when rule definition validation fails", async () => {
   assert.equal(response.statusCode, 400);
   const body = response.json() as { error: string };
   assert.match(body.error, /unknown plugin/i);
+
+  await app.close();
+});
+
+test("installs plugin when plugin exists", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStubWithRules([]));
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/appointment-manager/install"
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json() as { status: string; plugin: string };
+  assert.equal(body.status, "installed");
+  assert.equal(body.plugin, "appointment-manager");
+
+  await app.close();
+});
+
+test("blocks uninstall when plugin is referenced by automation rules", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(
+    app,
+    createRuntimeStubWithRules([
+      {
+        actions: [{ plugin: "appointment-manager" }]
+      }
+    ])
+  );
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/appointment-manager/uninstall",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 409);
+  const body = response.json() as { error: string };
+  assert.match(body.error, /referenced by active automation rules/i);
+
+  await app.close();
+});
+
+test("uninstalls plugin when no automation rules reference it", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStubWithRules([]));
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/appointment-manager/uninstall",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json() as { status: string; plugin: string };
+  assert.equal(body.status, "uninstalled");
+  assert.equal(body.plugin, "appointment-manager");
 
   await app.close();
 });

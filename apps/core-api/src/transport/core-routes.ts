@@ -49,6 +49,67 @@ export async function registerCoreRoutes(
     return changed ? { status: "enabled" } : reply.code(404).send({ error: "Plugin not found" });
   });
 
+  server.post("/api/plugins/:name/install", async (request, reply) => {
+    const parsedParams = z.object({ name: z.string().min(1) }).safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid plugin name" });
+    }
+
+    const params = parsedParams.data;
+    const plugin = runtime.pluginEngine
+      .list()
+      .find((entry) => entry.manifest.name === params.name);
+
+    if (!plugin) {
+      return reply.code(404).send({ error: "Plugin not found" });
+    }
+
+    runtime.pluginEngine.enable(params.name);
+    return reply.code(200).send({
+      status: "installed",
+      plugin: params.name
+    });
+  });
+
+  server.post("/api/plugins/:name/uninstall", async (request, reply) => {
+    const parsedParams = z.object({ name: z.string().min(1) }).safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid plugin name" });
+    }
+
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const params = parsedParams.data;
+    const headers = parsedHeaders.data;
+    const plugin = runtime.pluginEngine
+      .list()
+      .find((entry) => entry.manifest.name === params.name);
+
+    if (!plugin) {
+      return reply.code(404).send({ error: "Plugin not found" });
+    }
+
+    const rules = await runtime.automationEngine.listRules(headers["x-bizforge-org-id"]);
+    const activeReferences = rules.some((rule) =>
+      rule.actions.some((action) => action.plugin === params.name)
+    );
+
+    if (activeReferences) {
+      return reply.code(409).send({
+        error: "Plugin is referenced by active automation rules"
+      });
+    }
+
+    runtime.pluginEngine.disable(params.name);
+    return reply.code(200).send({
+      status: "uninstalled",
+      plugin: params.name
+    });
+  });
+
   server.get("/api/automation/rules", async (request, reply) => {
     const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
     if (!parsedHeaders.success) {

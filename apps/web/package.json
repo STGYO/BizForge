@@ -6,6 +6,8 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
+    "test": "echo \"No tests configured for web\"",
+    "test:watch": "echo \"No watch tests configured for web\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"No lint configured for web\""
   },
