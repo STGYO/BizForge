@@ -214,6 +214,23 @@ test("installs plugin when plugin exists", async () => {
   await app.close();
 });
 
+test("returns not found when installing unknown plugin", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStub());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/unknown/install"
+  });
+
+  assert.equal(response.statusCode, 404);
+  const body = response.json() as { error: string; code: string };
+  assert.match(body.error, /plugin not found/i);
+  assert.equal(body.code, "plugin_not_found");
+
+  await app.close();
+});
+
 test("blocks uninstall when plugin is referenced by automation rules", async () => {
   const app = Fastify();
   await registerCoreRoutes(
@@ -234,8 +251,9 @@ test("blocks uninstall when plugin is referenced by automation rules", async () 
   });
 
   assert.equal(response.statusCode, 409);
-  const body = response.json() as { error: string };
+  const body = response.json() as { error: string; code: string };
   assert.match(body.error, /referenced by active automation rules/i);
+  assert.equal(body.code, "plugin_in_use");
 
   await app.close();
 });
@@ -256,6 +274,26 @@ test("uninstalls plugin when no automation rules reference it", async () => {
   const body = response.json() as { status: string; plugin: string };
   assert.equal(body.status, "uninstalled");
   assert.equal(body.plugin, "appointment-manager");
+
+  await app.close();
+});
+
+test("returns not found when uninstalling unknown plugin", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStub());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/unknown/uninstall",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 404);
+  const body = response.json() as { error: string; code: string };
+  assert.match(body.error, /plugin not found/i);
+  assert.equal(body.code, "plugin_not_found");
 
   await app.close();
 });

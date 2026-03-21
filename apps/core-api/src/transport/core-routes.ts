@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { BizForgeRuntime } from "../server";
+import { PluginLifecycleService } from "../services/plugin-lifecycle-service";
 
 const orgHeaderSchema = z.object({
   "x-bizforge-org-id": z.string().min(1)
@@ -11,6 +12,10 @@ export async function registerCoreRoutes(
   runtime: BizForgeRuntime
 ): Promise<void> {
   runtime.automationEngine.initialize();
+  const pluginLifecycleService = new PluginLifecycleService({
+    pluginEngine: runtime.pluginEngine,
+    automationEngine: runtime.automationEngine
+  });
 
   server.get("/health", async () => ({
     status: "ok",
@@ -56,18 +61,17 @@ export async function registerCoreRoutes(
     }
 
     const params = parsedParams.data;
-    const plugin = runtime.pluginEngine
-      .list()
-      .find((entry) => entry.manifest.name === params.name);
-
-    if (!plugin) {
-      return reply.code(404).send({ error: "Plugin not found" });
+    const outcome = await pluginLifecycleService.installPlugin(params.name);
+    if (!outcome.ok) {
+      return reply.code(outcome.error.httpStatus).send({
+        error: outcome.error.message,
+        code: outcome.error.code
+      });
     }
 
-    runtime.pluginEngine.enable(params.name);
     return reply.code(200).send({
-      status: "installed",
-      plugin: params.name
+      status: outcome.status,
+      plugin: outcome.plugin
     });
   });
 
@@ -84,29 +88,21 @@ export async function registerCoreRoutes(
 
     const params = parsedParams.data;
     const headers = parsedHeaders.data;
-    const plugin = runtime.pluginEngine
-      .list()
-      .find((entry) => entry.manifest.name === params.name);
-
-    if (!plugin) {
-      return reply.code(404).send({ error: "Plugin not found" });
-    }
-
-    const rules = await runtime.automationEngine.listRules(headers["x-bizforge-org-id"]);
-    const activeReferences = rules.some((rule) =>
-      rule.actions.some((action) => action.plugin === params.name)
+    const outcome = await pluginLifecycleService.uninstallPlugin(
+      params.name,
+      headers["x-bizforge-org-id"]
     );
 
-    if (activeReferences) {
-      return reply.code(409).send({
-        error: "Plugin is referenced by active automation rules"
+    if (!outcome.ok) {
+      return reply.code(outcome.error.httpStatus).send({
+        error: outcome.error.message,
+        code: outcome.error.code
       });
     }
 
-    runtime.pluginEngine.disable(params.name);
     return reply.code(200).send({
-      status: "uninstalled",
-      plugin: params.name
+      status: outcome.status,
+      plugin: outcome.plugin
     });
   });
 
