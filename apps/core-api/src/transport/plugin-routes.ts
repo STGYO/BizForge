@@ -11,7 +11,10 @@ export async function registerPluginRoutes(
       version: plugin.manifest.version,
       status: plugin.status,
       permissions: plugin.manifest.permissions,
-      activationEvents: plugin.manifest.activationEvents
+      activationEvents: plugin.manifest.activationEvents,
+      routes: plugin.registration.routes ?? [],
+      triggers: plugin.registration.triggers ?? [],
+      actions: plugin.registration.actions ?? []
     }));
   }
 }

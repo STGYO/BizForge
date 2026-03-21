@@ -9,6 +9,20 @@ import {
   type AutomationRuleRecord
 } from "../repositories/automation-rule-repository";
 
+export interface AutomationTriggerCatalogItem {
+  plugin: string;
+  key: string;
+  displayName: string;
+  eventType: string;
+}
+
+export interface AutomationActionCatalogItem {
+  plugin: string;
+  key: string;
+  displayName: string;
+  inputSchema: Record<string, unknown>;
+}
+
 export interface AutomationRule {
   id: string;
   organizationId: string;
@@ -38,6 +52,35 @@ export class AutomationEngine {
   async listRules(organizationId: string): Promise<AutomationRule[]> {
     const records = await this.repository.listByOrganization(organizationId);
     return records.map((record) => this.toAutomationRule(record));
+  }
+
+  listCatalog(): {
+    triggers: AutomationTriggerCatalogItem[];
+    actions: AutomationActionCatalogItem[];
+  } {
+    const enabledPlugins = this.pluginEngine
+      .list()
+      .filter((plugin) => plugin.status === "enabled");
+
+    const triggers = enabledPlugins.flatMap((plugin) =>
+      (plugin.registration.triggers ?? []).map((trigger) => ({
+        plugin: plugin.manifest.name,
+        key: trigger.key,
+        displayName: trigger.displayName,
+        eventType: trigger.eventType
+      }))
+    );
+
+    const actions = enabledPlugins.flatMap((plugin) =>
+      (plugin.registration.actions ?? []).map((action) => ({
+        plugin: plugin.manifest.name,
+        key: action.key,
+        displayName: action.displayName,
+        inputSchema: action.inputSchema
+      }))
+    );
+
+    return { triggers, actions };
   }
 
   private async executeForEvent(event: EventEnvelope): Promise<void> {

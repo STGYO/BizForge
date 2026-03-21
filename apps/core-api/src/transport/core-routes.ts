@@ -39,6 +39,10 @@ export async function registerCoreRoutes(
     return await runtime.automationEngine.listRules(headers["x-bizforge-org-id"]);
   });
 
+  server.get("/api/automation/catalog", async () => {
+    return runtime.automationEngine.listCatalog();
+  });
+
   server.post("/api/automation/rules", async (request) => {
     const headers = orgHeaderSchema.parse(request.headers);
     const body = z
