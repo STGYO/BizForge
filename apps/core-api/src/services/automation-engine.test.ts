@@ -46,7 +46,14 @@ function createPluginEngineStub(options: {
                 key: "schedule_follow_up",
                 displayName: "Schedule Follow Up",
                 handlerName: "scheduleFollowUp",
-                inputSchema: {}
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    customerId: { type: "string" },
+                    offsetHours: { type: "number" }
+                  },
+                  required: ["customerId", "offsetHours"]
+                }
               }
             ],
             handlers: withHandler
@@ -160,4 +167,132 @@ test("validates rule definitions against plugin catalog", async () => {
   if (!invalid.valid) {
     assert.match(invalid.error, /Unknown plugin/);
   }
+});
+
+test("emits automation.action.failed when action input violates schema", async () => {
+  const { eventBus } = createEngine(createPluginEngineStub({ status: "enabled", withHandler: true }));
+
+  const failedEvents: Array<Record<string, unknown>> = [];
+  const executedEvents: Array<Record<string, unknown>> = [];
+
+  eventBus.subscribe("automation.action.failed", async (event) => {
+    failedEvents.push(event.payload as Record<string, unknown>);
+  });
+  eventBus.subscribe("automation.action.executed", async (event) => {
+    executedEvents.push(event.payload as Record<string, unknown>);
+  });
+
+  await eventBus.publish({
+    eventId: randomUUID(),
+    eventType: "automation.action.requested",
+    occurredAt: new Date().toISOString(),
+    organizationId: "org-1",
+    sourcePlugin: "core.automation",
+    schemaVersion: 1,
+    payload: {
+      plugin: "appointment-manager",
+      actionKey: "schedule_follow_up",
+      input: { customerId: "cust-1", offsetHours: "24" },
+      triggerEventId: "trigger-2"
+    }
+  });
+
+  assert.equal(executedEvents.length, 0);
+  assert.equal(failedEvents.length, 1);
+
+  const failed = failedEvents[0];
+  assert.ok(failed);
+  assert.equal(failed.reason, "action_input_validation_failed");
+  assert.equal(failed.plugin, "appointment-manager");
+  assert.equal(failed.actionKey, "schedule_follow_up");
+  assert.equal(failed.triggerEventId, "trigger-2");
+});
+
+test("executes action end-to-end when trigger event matches rule", async () => {
+  const { engine, eventBus } = createEngine(
+    createPluginEngineStub({ status: "enabled", withHandler: true })
+  );
+
+  const executedEvents: Array<Record<string, unknown>> = [];
+  eventBus.subscribe("automation.action.executed", async (event) => {
+    executedEvents.push(event.payload as Record<string, unknown>);
+  });
+
+  await engine.createRule({
+    organizationId: "org-1",
+    triggerEvent: "lead.generated",
+    conditions: [{ field: "source", equals: "web" }],
+    actions: [
+      {
+        plugin: "appointment-manager",
+        actionKey: "schedule_follow_up",
+        input: { customerId: "cust-100", offsetHours: 24 }
+      }
+    ],
+    enabled: true
+  });
+
+  await eventBus.publish({
+    eventId: "trigger-e2e-1",
+    eventType: "lead.generated",
+    occurredAt: new Date().toISOString(),
+    organizationId: "org-1",
+    sourcePlugin: "core.leads",
+    schemaVersion: 1,
+    payload: {
+      source: "web"
+    }
+  });
+
+  assert.equal(executedEvents.length, 1);
+  const executed = executedEvents[0];
+  assert.ok(executed);
+  assert.equal(executed.plugin, "appointment-manager");
+  assert.equal(executed.actionKey, "schedule_follow_up");
+  assert.equal(executed.triggerEventId, "trigger-e2e-1");
+});
+
+test("emits validation failure end-to-end when matched rule has invalid action input", async () => {
+  const { engine, eventBus } = createEngine(
+    createPluginEngineStub({ status: "enabled", withHandler: true })
+  );
+
+  const failedEvents: Array<Record<string, unknown>> = [];
+  eventBus.subscribe("automation.action.failed", async (event) => {
+    failedEvents.push(event.payload as Record<string, unknown>);
+  });
+
+  await engine.createRule({
+    organizationId: "org-1",
+    triggerEvent: "lead.generated",
+    conditions: [{ field: "source", equals: "partner" }],
+    actions: [
+      {
+        plugin: "appointment-manager",
+        actionKey: "schedule_follow_up",
+        input: { customerId: "cust-101", offsetHours: "invalid-type" }
+      }
+    ],
+    enabled: true
+  });
+
+  await eventBus.publish({
+    eventId: "trigger-e2e-2",
+    eventType: "lead.generated",
+    occurredAt: new Date().toISOString(),
+    organizationId: "org-1",
+    sourcePlugin: "core.leads",
+    schemaVersion: 1,
+    payload: {
+      source: "partner"
+    }
+  });
+
+  assert.equal(failedEvents.length, 1);
+  const failed = failedEvents[0];
+  assert.ok(failed);
+  assert.equal(failed.reason, "action_input_validation_failed");
+  assert.equal(failed.plugin, "appointment-manager");
+  assert.equal(failed.actionKey, "schedule_follow_up");
+  assert.equal(failed.triggerEventId, "trigger-e2e-2");
 });

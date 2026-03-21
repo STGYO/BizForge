@@ -78,3 +78,75 @@ test("loads plugins and reports skipped entries", async () => {
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
+
+test("skips plugin when route conflicts with an already loaded plugin", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bizforge-plugin-engine-conflict-"));
+
+  try {
+    const pluginOneRoot = path.join(tempRoot, "plugin-one");
+    const pluginTwoRoot = path.join(tempRoot, "plugin-two");
+
+    await mkdir(path.join(pluginOneRoot, "dist", "server"), { recursive: true });
+    await mkdir(path.join(pluginTwoRoot, "dist", "server"), { recursive: true });
+
+    await writeFile(
+      path.join(pluginOneRoot, "plugin.json"),
+      createPluginManifest("plugin-one", "dist/server/index.js"),
+      "utf-8"
+    );
+    await writeFile(
+      path.join(pluginTwoRoot, "plugin.json"),
+      createPluginManifest("plugin-two", "dist/server/index.js"),
+      "utf-8"
+    );
+
+    const routeRegistrationModule = [
+      "export const registration = {",
+      "  manifest: {",
+      "    name: '__PLUGIN_NAME__',",
+      "    version: '1.0.0',",
+      "    author: 'BizForge',",
+      "    permissions: ['automation'],",
+      "    activationEvents: ['onStartup'],",
+      "    backendEntry: 'dist/server/index.js',",
+      "    frontendEntry: 'dist/ui/index.js'",
+      "  },",
+      "  routes: [",
+      "    { method: 'GET', path: '/appointments', handlerName: 'listAppointments' }",
+      "  ],",
+      "  triggers: [],",
+      "  actions: [],",
+      "  handlers: {",
+      "    listAppointments: async () => ({ ok: true })",
+      "  }",
+      "};"
+    ].join("\n");
+
+    await writeFile(
+      path.join(pluginOneRoot, "dist", "server", "index.js"),
+      routeRegistrationModule.replace("__PLUGIN_NAME__", "plugin-one"),
+      "utf-8"
+    );
+    await writeFile(
+      path.join(pluginTwoRoot, "dist", "server", "index.js"),
+      routeRegistrationModule.replace("__PLUGIN_NAME__", "plugin-two"),
+      "utf-8"
+    );
+
+    const engine = new PluginEngine({ pluginsDir: tempRoot });
+    await engine.loadInstalledPlugins();
+
+    const plugins = engine.list();
+    assert.equal(plugins.length, 1);
+    assert.equal(plugins[0]?.manifest.name, "plugin-one");
+
+    const report = engine.getLoadReport();
+    assert.equal(report.scannedDirectories, 2);
+    assert.equal(report.loadedPlugins, 1);
+    assert.equal(report.skippedPlugins, 1);
+    assert.equal(report.failedPlugins.length, 1);
+    assert.match(report.failedPlugins[0]?.reason ?? "", /Route conflicts detected/i);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});

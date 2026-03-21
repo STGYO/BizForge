@@ -191,6 +191,11 @@ export class AutomationEngine {
       return;
     }
 
+    if (!this.validateActionInputSchema(action.inputSchema, payload.input)) {
+      await this.publishActionFailure(event, "action_input_validation_failed");
+      return;
+    }
+
     try {
       await handler(
         {
@@ -245,6 +250,79 @@ export class AutomationEngine {
         reason
       }
     });
+  }
+
+  private validateActionInputSchema(
+    schema: Record<string, unknown>,
+    input: Record<string, unknown>
+  ): boolean {
+    if (Object.keys(schema).length === 0) {
+      return true;
+    }
+
+    const schemaType = schema.type;
+    if (schemaType !== "object") {
+      return true;
+    }
+
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return false;
+    }
+
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    for (const key of required) {
+      if (typeof key !== "string") {
+        continue;
+      }
+
+      if (!(key in input)) {
+        return false;
+      }
+    }
+
+    const properties =
+      schema.properties && typeof schema.properties === "object"
+        ? (schema.properties as Record<string, unknown>)
+        : {};
+
+    for (const [propertyName, definition] of Object.entries(properties)) {
+      if (!(propertyName in input)) {
+        continue;
+      }
+
+      const propertyValue = input[propertyName];
+      if (!this.matchesSchemaType(definition, propertyValue)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private matchesSchemaType(definition: unknown, value: unknown): boolean {
+    if (!definition || typeof definition !== "object") {
+      return true;
+    }
+
+    const expectedType = (definition as { type?: unknown }).type;
+    if (typeof expectedType !== "string") {
+      return true;
+    }
+
+    switch (expectedType as string) {
+      case "string":
+        return typeof value === "string";
+      case "number":
+        return typeof value === "number" && Number.isFinite(value);
+      case "boolean":
+        return typeof value === "boolean";
+      case "object":
+        return typeof value === "object" && value !== null && !Array.isArray(value);
+      case "array":
+        return Array.isArray(value);
+      default:
+        return true;
+    }
   }
 
   private toAutomationRule(record: AutomationRuleRecord): AutomationRule {

@@ -30,14 +30,18 @@ export async function registerPluginRoutes(
         url: fullPath,
         handler: async (request, reply) => {
           if (plugin.status !== "enabled") {
-            return reply.code(409).send({ error: "Plugin is disabled" });
+            return reply.code(409).send({
+              error: "plugin_disabled",
+              message: "Plugin is disabled"
+            });
           }
 
           const handler = plugin.registration.handlers?.[route.handlerName];
           if (!handler) {
-            return reply
-              .code(500)
-              .send({ error: `Plugin handler not found: ${route.handlerName}` });
+            return reply.code(500).send({
+              error: "handler_not_found",
+              message: `Plugin handler not found: ${route.handlerName}`
+            });
           }
 
           try {
@@ -57,7 +61,10 @@ export async function registerPluginRoutes(
               { error, plugin: plugin.manifest.name, handler: route.handlerName },
               "Plugin route handler failed"
             );
-            return reply.code(500).send({ error: "Plugin route execution failed" });
+            return reply.code(500).send({
+              error: "handler_execution_failed",
+              message: "Plugin route execution failed"
+            });
           }
         }
       });

@@ -57,6 +57,7 @@ export class PluginEngine {
       skippedPlugins: 0,
       failedPlugins: []
     };
+    const claimedRoutes = new Map<string, string>();
 
     const dir = path.resolve(process.cwd(), this.options.pluginsDir);
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => {
@@ -117,6 +118,21 @@ export class PluginEngine {
       const manifest = parsed.data as PluginManifest;
       const registration = await this.loadRegistration(manifest, rootPath);
 
+      const conflicts = this.findRouteConflicts(claimedRoutes, manifest.name, registration);
+      if (conflicts.length > 0) {
+        report.skippedPlugins += 1;
+        report.failedPlugins.push({
+          pluginDir: entry.name,
+          reason: `Route conflicts detected: ${conflicts.join(", ")}`
+        });
+
+        this.options.logger?.warn("Plugin skipped due to route conflicts", {
+          plugin: manifest.name,
+          conflicts
+        });
+        continue;
+      }
+
       if ((registration.handlers ?? {}) && Object.keys(registration.handlers ?? {}).length === 0) {
         this.options.logger?.warn("Plugin loaded without handlers", {
           plugin: manifest.name,
@@ -132,6 +148,10 @@ export class PluginEngine {
       });
 
       report.loadedPlugins += 1;
+
+      for (const route of registration.routes ?? []) {
+        claimedRoutes.set(this.routeSignature(route.method, route.path), manifest.name);
+      }
     }
 
     this.lastLoadReport = report;
@@ -251,5 +271,27 @@ export class PluginEngine {
     }
 
     return "manifest" in value;
+  }
+
+  private findRouteConflicts(
+    claimedRoutes: Map<string, string>,
+    pluginName: string,
+    registration: PluginRegistration
+  ): string[] {
+    const conflicts: string[] = [];
+
+    for (const route of registration.routes ?? []) {
+      const signature = this.routeSignature(route.method, route.path);
+      const owner = claimedRoutes.get(signature);
+      if (owner && owner !== pluginName) {
+        conflicts.push(`${signature} already claimed by ${owner}`);
+      }
+    }
+
+    return conflicts;
+  }
+
+  private routeSignature(method: string, pathValue: string): string {
+    return `${method.toUpperCase()} ${pathValue}`;
   }
 }

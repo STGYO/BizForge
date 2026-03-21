@@ -6,8 +6,14 @@ import { InMemoryEventBus } from "../services/event-bus";
 import { registerPluginRoutes } from "./plugin-routes";
 import type { BizForgeRuntime } from "../server";
 
-function buildRuntime(options?: { pluginStatus?: "enabled" | "disabled" }): BizForgeRuntime {
+function buildRuntime(options?: {
+  pluginStatus?: "enabled" | "disabled";
+  withHandler?: boolean;
+  throwFromHandler?: boolean;
+}): BizForgeRuntime {
   const pluginStatus = options?.pluginStatus ?? "enabled";
+  const withHandler = options?.withHandler ?? true;
+  const throwFromHandler = options?.throwFromHandler ?? false;
   const eventBus = new InMemoryEventBus();
 
   const registration: PluginRegistration = {
@@ -42,10 +48,18 @@ function buildRuntime(options?: { pluginStatus?: "enabled" | "disabled" }): BizF
         inputSchema: {}
       }
     ],
-    handlers: {
-      listAppointments: async () => ({ appointments: [{ id: "appt-1" }] }),
-      scheduleFollowUp: async () => ({ ok: true })
-    }
+    handlers: withHandler
+      ? {
+          listAppointments: async () => {
+            if (throwFromHandler) {
+              throw new Error("boom");
+            }
+
+            return { appointments: [{ id: "appt-1" }] };
+          },
+          scheduleFollowUp: async () => ({ ok: true })
+        }
+      : {}
   };
 
   return {
@@ -94,8 +108,45 @@ test("returns 409 for disabled plugin route", async () => {
   });
 
   assert.equal(response.statusCode, 409);
-  const body = response.json() as { error: string };
-  assert.match(body.error, /disabled/i);
+  const body = response.json() as { error: string; message: string };
+  assert.equal(body.error, "plugin_disabled");
+  assert.match(body.message, /disabled/i);
+
+  await app.close();
+});
+
+test("returns 500 handler_not_found when route handler is missing", async () => {
+  const app = Fastify();
+
+  await registerPluginRoutes(app, buildRuntime({ pluginStatus: "enabled", withHandler: false }));
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/plugins/appointment-manager/appointments"
+  });
+
+  assert.equal(response.statusCode, 500);
+  const body = response.json() as { error: string; message: string };
+  assert.equal(body.error, "handler_not_found");
+  assert.match(body.message, /not found/i);
+
+  await app.close();
+});
+
+test("returns 500 handler_execution_failed when handler throws", async () => {
+  const app = Fastify();
+
+  await registerPluginRoutes(app, buildRuntime({ pluginStatus: "enabled", throwFromHandler: true }));
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/plugins/appointment-manager/appointments"
+  });
+
+  assert.equal(response.statusCode, 500);
+  const body = response.json() as { error: string; message: string };
+  assert.equal(body.error, "handler_execution_failed");
+  assert.match(body.message, /execution failed/i);
 
   await app.close();
 });
