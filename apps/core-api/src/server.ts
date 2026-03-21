@@ -23,7 +23,11 @@ export async function createServer(): Promise<FastifyInstance> {
 
   const eventBus = new InMemoryEventBus();
   const pluginEngine = new PluginEngine({
-    pluginsDir: process.env.PLUGINS_DIR ?? "../../plugins"
+    pluginsDir: process.env.PLUGINS_DIR ?? "../../plugins",
+    logger: {
+      info: (message, meta) => server.log.info(meta ?? {}, message),
+      warn: (message, meta) => server.log.warn(meta ?? {}, message)
+    }
   });
   const pgPool = getPgPool();
   const dbHealthy = await checkPostgresHealth();
@@ -54,6 +58,14 @@ export async function createServer(): Promise<FastifyInstance> {
 
   await registerCoreRoutes(server, runtime);
   await pluginEngine.loadInstalledPlugins();
+  const loadReport = pluginEngine.getLoadReport();
+  server.log.info(
+    {
+      persistence: runtime.persistence,
+      pluginLoad: loadReport
+    },
+    "Runtime diagnostics"
+  );
   await registerPluginRoutes(server, runtime);
 
   return server;

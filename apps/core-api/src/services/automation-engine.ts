@@ -167,10 +167,12 @@ export class AutomationEngine {
 
     const plugin = this.pluginEngine.list().find((item) => item.manifest.name === payload.plugin);
     if (!plugin || plugin.status !== "enabled") {
+      await this.publishActionFailure(event, "plugin_unavailable");
       return;
     }
 
     if (!plugin.manifest.permissions.includes("automation")) {
+      await this.publishActionFailure(event, "plugin_missing_automation_permission");
       return;
     }
 
@@ -178,26 +180,71 @@ export class AutomationEngine {
       (registeredAction) => registeredAction.key === payload.actionKey
     );
     if (!action) {
+      await this.publishActionFailure(event, "action_not_registered");
       return;
     }
 
     const handlerName = action.handlerName ?? payload.actionKey;
     const handler = plugin.registration.handlers?.[handlerName];
     if (!handler) {
+      await this.publishActionFailure(event, "handler_not_found");
       return;
     }
 
-    await handler(
-      {
-        body: undefined,
-        query: undefined,
-        params: undefined,
-        headers: undefined,
-        rawEvent: event,
-        actionInput: payload.input
-      },
-      { eventBus: this.eventBus }
-    );
+    try {
+      await handler(
+        {
+          body: undefined,
+          query: undefined,
+          params: undefined,
+          headers: undefined,
+          rawEvent: event,
+          actionInput: payload.input
+        },
+        { eventBus: this.eventBus }
+      );
+
+      await this.eventBus.publish({
+        eventId: randomUUID(),
+        eventType: "automation.action.executed",
+        occurredAt: new Date().toISOString(),
+        organizationId: event.organizationId,
+        sourcePlugin: "core.automation",
+        schemaVersion: 1,
+        correlationId: event.eventId,
+        payload: {
+          plugin: payload.plugin,
+          actionKey: payload.actionKey,
+          triggerEventId: payload.triggerEventId
+        }
+      });
+    } catch {
+      await this.publishActionFailure(event, "handler_execution_failed");
+    }
+  }
+
+  private async publishActionFailure(event: EventEnvelope, reason: string): Promise<void> {
+    const payload = event.payload as {
+      plugin: string;
+      actionKey: string;
+      triggerEventId: string;
+    };
+
+    await this.eventBus.publish({
+      eventId: randomUUID(),
+      eventType: "automation.action.failed",
+      occurredAt: new Date().toISOString(),
+      organizationId: event.organizationId,
+      sourcePlugin: "core.automation",
+      schemaVersion: 1,
+      correlationId: event.eventId,
+      payload: {
+        plugin: payload.plugin,
+        actionKey: payload.actionKey,
+        triggerEventId: payload.triggerEventId,
+        reason
+      }
+    });
   }
 
   private toAutomationRule(record: AutomationRuleRecord): AutomationRule {
