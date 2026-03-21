@@ -102,6 +102,7 @@ test("emits automation.action.executed for successful action handler", async () 
   assert.ok(executed);
   assert.equal(executed.plugin, "appointment-manager");
   assert.equal(executed.actionKey, "schedule_follow_up");
+  assert.equal(executed.triggerEventId, "trigger-1");
 });
 
 test("emits automation.action.failed when plugin is disabled", async () => {
@@ -131,6 +132,9 @@ test("emits automation.action.failed when plugin is disabled", async () => {
   const failed = failedEvents[0];
   assert.ok(failed);
   assert.equal(failed.reason, "plugin_unavailable");
+  assert.equal(failed.plugin, "appointment-manager");
+  assert.equal(failed.actionKey, "schedule_follow_up");
+  assert.equal(failed.triggerEventId, "trigger-1");
 });
 
 test("validates rule definitions against plugin catalog", async () => {
