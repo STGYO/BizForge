@@ -10,8 +10,11 @@ import {
 } from "./automation-rule-builder";
 import {
   type AutomationCatalog,
+  acknowledgeAutomationDeadLetter,
   type AutomationExecutionRecord,
+  type AutomationDeadLetterRecord,
   type AutomationRule,
+  fetchAutomationDeadLetters,
   createAutomationRule,
   fetchAutomationRuleExecutions,
   fetchAutomationRuleById,
@@ -57,6 +60,10 @@ export function AutomationConsole({
   const [activeHistoryRuleId, setActiveHistoryRuleId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [executionHistory, setExecutionHistory] = useState<AutomationExecutionRecord[]>([]);
+  const [activeDeadLetterRuleId, setActiveDeadLetterRuleId] = useState<string | null>(null);
+  const [deadLetterLoading, setDeadLetterLoading] = useState(false);
+  const [deadLetters, setDeadLetters] = useState<AutomationDeadLetterRecord[]>([]);
+  const [acknowledgingDeadLetterId, setAcknowledgingDeadLetterId] = useState<string | null>(null);
 
   function syncEditQuery(ruleId?: string): void {
     if (typeof window === "undefined") {
@@ -285,6 +292,52 @@ export function AutomationConsole({
     }
   }
 
+  async function handleLoadDeadLetters(rule?: AutomationRule): Promise<void> {
+    setError(null);
+    setSimulationMessage(null);
+    setDeadLetterLoading(true);
+
+    try {
+      const records = await fetchAutomationDeadLetters(organizationId);
+      setDeadLetters(records);
+      setActiveDeadLetterRuleId(rule?.id ?? null);
+    } catch (deadLetterError) {
+      setError(
+        deadLetterError instanceof Error ? deadLetterError.message : "Failed to load dead letters"
+      );
+    } finally {
+      setDeadLetterLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void handleLoadDeadLetters();
+  }, [organizationId]);
+
+  async function handleAcknowledgeDeadLetter(deadLetterId: string): Promise<void> {
+    setError(null);
+    setSimulationMessage(null);
+    setAcknowledgingDeadLetterId(deadLetterId);
+
+    try {
+      await acknowledgeAutomationDeadLetter(deadLetterId, organizationId);
+      setDeadLetters((current) => current.filter((deadLetter) => deadLetter.id !== deadLetterId));
+    } catch (acknowledgeError) {
+      setError(
+        acknowledgeError instanceof Error
+          ? acknowledgeError.message
+          : "Failed to acknowledge dead letter"
+      );
+    } finally {
+      setAcknowledgingDeadLetterId(null);
+    }
+  }
+
+  const filteredDeadLetters =
+    activeDeadLetterRuleId == null
+      ? deadLetters
+      : deadLetters.filter((deadLetter) => deadLetter.ruleId === activeDeadLetterRuleId);
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-black/10 bg-white p-4">
@@ -426,6 +479,15 @@ export function AutomationConsole({
                     </button>
                     <button
                       type="button"
+                      className="rounded-lg border border-black/10 px-3 py-1 text-xs font-semibold"
+                      onClick={() => {
+                        void handleLoadDeadLetters(rule);
+                      }}
+                    >
+                      Dead Letters
+                    </button>
+                    <button
+                      type="button"
                       className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white"
                       onClick={() => {
                         void handleDeleteRule(rule);
@@ -478,11 +540,89 @@ export function AutomationConsole({
                     <span className="rounded-full bg-black/5 px-2 py-1 text-black/70">
                       retries: {execution.retryCount}
                     </span>
+                    <span className="rounded-full bg-black/5 px-2 py-1 text-black/70">
+                      matched: {execution.matched ? "yes" : "no"}
+                    </span>
                   </div>
                 </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-black/60">
+                  <span>trigger id: {execution.triggerEventId ?? "n/a"}</span>
+                  <span>actions executed: {execution.actionsExecuted?.length ?? 0}</span>
+                  <span>errors: {execution.errors.length}</span>
+                </div>
+                {execution.conditionsSummary ? (
+                  <pre className="mt-2 overflow-x-auto rounded-lg bg-black/5 p-2 text-[11px] text-black/70">
+{JSON.stringify(execution.conditionsSummary, null, 2)}
+                  </pre>
+                ) : null}
                 {execution.lastError ? (
                   <p className="mt-2 text-xs text-red-700">{execution.lastError}</p>
                 ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-black/10 bg-white p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h2 className="font-display text-xl">Dead Letters</h2>
+          <button
+            type="button"
+            className="rounded-lg border border-black/10 px-3 py-1 text-xs font-semibold"
+            onClick={() => {
+              void handleLoadDeadLetters();
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+        {deadLetterLoading ? (
+          <p className="mt-3 text-sm text-black/70">Loading dead letters...</p>
+        ) : deadLetters.length === 0 ? (
+          <p className="mt-3 text-sm text-black/70">No dead letters recorded for this organization.</p>
+        ) : filteredDeadLetters.length === 0 ? (
+          <p className="mt-3 text-sm text-black/70">No dead letters found for selected rule.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {filteredDeadLetters.map((deadLetter) => (
+              <li key={deadLetter.id} className="rounded-xl border border-black/10 p-3">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">{deadLetter.failureReason}</p>
+                    <p className="text-xs text-black/60">{new Date(deadLetter.createdAt).toLocaleString()}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full bg-black/5 px-2 py-1 text-black/70">
+                      rule: {deadLetter.ruleId}
+                    </span>
+                    <span className="rounded-full bg-black/5 px-2 py-1 text-black/70">
+                      retries: {deadLetter.retryAttempts}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  <pre className="overflow-x-auto rounded-lg bg-black/5 p-2 text-[11px] text-black/70">
+{JSON.stringify(deadLetter.originalEvent, null, 2)}
+                  </pre>
+                  <pre className="overflow-x-auto rounded-lg bg-black/5 p-2 text-[11px] text-black/70">
+{JSON.stringify(deadLetter.actionConfig, null, 2)}
+                  </pre>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-shell px-3 py-1 text-xs font-semibold text-white disabled:opacity-60"
+                    onClick={() => {
+                      void handleAcknowledgeDeadLetter(deadLetter.id);
+                    }}
+                    disabled={acknowledgingDeadLetterId === deadLetter.id}
+                  >
+                    {acknowledgingDeadLetterId === deadLetter.id ? "Acknowledging..." : "Acknowledge"}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

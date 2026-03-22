@@ -60,12 +60,25 @@ export interface AutomationExecutionRecord {
   triggerEventId?: string;
   matched: boolean;
   actionsTriggered: number;
+  conditionsSummary?: Record<string, unknown>;
+  actionsExecuted?: Array<Record<string, unknown>>;
   errors: string[];
   status: "pending" | "success" | "partial_failure" | "failed";
   retryCount: number;
   lastError?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AutomationDeadLetterRecord {
+  id: string;
+  ruleId: string;
+  organizationId: string;
+  originalEvent: Record<string, unknown>;
+  actionConfig: Record<string, unknown>;
+  failureReason: string;
+  retryAttempts: number;
+  createdAt: string;
 }
 
 export const DEFAULT_ORG_ID = FALLBACK_ORG_ID;
@@ -249,4 +262,41 @@ export async function fetchAutomationRuleExecutions(
 
   const payload = (await response.json()) as { executions?: AutomationExecutionRecord[] };
   return payload.executions ?? [];
+}
+
+export async function fetchAutomationDeadLetters(
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<AutomationDeadLetterRecord[]> {
+  const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/dead-letters`, {
+    cache: "no-store",
+    headers: {
+      "x-bizforge-org-id": organizationId
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  const payload = (await response.json()) as { deadLetters?: AutomationDeadLetterRecord[] };
+  return payload.deadLetters ?? [];
+}
+
+export async function acknowledgeAutomationDeadLetter(
+  deadLetterId: string,
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<void> {
+  const response = await fetch(
+    `${getCoreApiBaseUrl()}/api/automation/dead-letters/${deadLetterId}/acknowledge`,
+    {
+      method: "POST",
+      headers: {
+        "x-bizforge-org-id": organizationId
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
 }
