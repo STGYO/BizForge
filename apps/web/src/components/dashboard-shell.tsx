@@ -24,6 +24,7 @@ interface MarketplacePreviewPlugin {
 }
 
 interface DashboardShellProps {
+  organizationId: string;
   plugins: DashboardPlugin[];
   pluginLoadError: string | null;
   marketplacePreview: MarketplacePreviewPlugin[];
@@ -33,6 +34,7 @@ interface DashboardShellProps {
 }
 
 export function DashboardShell({
+  organizationId,
   plugins,
   pluginLoadError,
   marketplacePreview,
@@ -71,7 +73,7 @@ export function DashboardShell({
         return;
       }
 
-      const created = await createAutomationRule(payload);
+      const created = await createAutomationRule(payload, organizationId);
       setAutomationSuccess(`Rule created: ${created.id}`);
       setAutomationDraft(createEmptyDraft(automationCatalog));
     } catch (createError) {

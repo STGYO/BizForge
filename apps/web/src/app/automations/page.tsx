@@ -1,9 +1,9 @@
 import { AutomationConsole } from "../../components/automation-console";
 import {
-  DEFAULT_ORG_ID,
   fetchAutomationCatalog,
   fetchAutomationRules
 } from "../../lib/automation-api";
+import { getDefaultOrganizationId } from "../../lib/organization";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,7 @@ interface AutomationsPageProps {
 }
 
 export default async function AutomationsPage({ searchParams }: AutomationsPageProps) {
+  const organizationId = getDefaultOrganizationId();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const initialEditIdRaw = resolvedSearchParams?.edit;
   const initialEditId =
@@ -23,7 +24,7 @@ export default async function AutomationsPage({ searchParams }: AutomationsPageP
 
   const [catalogResult, rulesResult] = await Promise.allSettled([
     fetchAutomationCatalog(),
-    fetchAutomationRules(DEFAULT_ORG_ID)
+    fetchAutomationRules(organizationId)
   ]);
 
   const catalog =
@@ -53,7 +54,7 @@ export default async function AutomationsPage({ searchParams }: AutomationsPageP
           <p className="text-xs uppercase tracking-wide text-black/60">Automation Studio</p>
           <h1 className="mt-1 font-display text-3xl">Rules and Simulation</h1>
           <p className="mt-2 text-sm text-black/70">
-            Organization context: {DEFAULT_ORG_ID} (temporary static mapping)
+            Organization context: {organizationId}
           </p>
         </header>
 
@@ -66,6 +67,7 @@ export default async function AutomationsPage({ searchParams }: AutomationsPageP
         <AutomationConsole
           initialRules={rules}
           catalog={catalog}
+          organizationId={organizationId}
           {...(initialEditId ? { initialEditId } : {})}
         />
       </div>

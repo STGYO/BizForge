@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { fetchCoreApi } from "../../lib/core-api-fetch";
+import { getDefaultOrganizationId } from "../../lib/organization";
 
 interface MarketplacePlugin {
   name: string;
@@ -10,10 +11,6 @@ interface MarketplacePlugin {
   status: "enabled" | "disabled";
   permissions: string[];
   installed: boolean;
-}
-
-function getDefaultOrganizationId(): string {
-  return process.env.BIZFORGE_DEFAULT_ORG_ID ?? "org-demo";
 }
 
 async function loadMarketplace(): Promise<{ plugins: MarketplacePlugin[]; error: string | null }> {

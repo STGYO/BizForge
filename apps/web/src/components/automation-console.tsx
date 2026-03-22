@@ -29,10 +29,16 @@ import {
 interface AutomationConsoleProps {
   initialRules: AutomationRule[];
   catalog: AutomationCatalog;
+  organizationId: string;
   initialEditId?: string;
 }
 
-export function AutomationConsole({ initialRules, catalog, initialEditId }: AutomationConsoleProps) {
+export function AutomationConsole({
+  initialRules,
+  catalog,
+  organizationId,
+  initialEditId
+}: AutomationConsoleProps) {
   const [rules, setRules] = useState<AutomationRule[]>(initialRules);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +101,7 @@ export function AutomationConsole({ initialRules, catalog, initialEditId }: Auto
 
     setSubmitting(true);
     try {
-      const created = await createAutomationRule(payload);
+      const created = await createAutomationRule(payload, organizationId);
 
       setRules((current) => [created, ...current]);
       setDraft(createEmptyDraft(catalog));
@@ -115,7 +121,7 @@ export function AutomationConsole({ initialRules, catalog, initialEditId }: Auto
     setSubmitting(true);
 
     try {
-      const rule = await fetchAutomationRuleById(ruleId);
+      const rule = await fetchAutomationRuleById(ruleId, organizationId);
       setDraft(
         createDraftFromPayload(
           {
@@ -194,7 +200,7 @@ export function AutomationConsole({ initialRules, catalog, initialEditId }: Auto
     setSimulationMessage(null);
 
     try {
-      const updated = await setAutomationRuleEnabled(rule.id, !rule.enabled);
+      const updated = await setAutomationRuleEnabled(rule.id, !rule.enabled, organizationId);
       setRules((current) => current.map((item) => (item.id === rule.id ? updated : item)));
     } catch (toggleError) {
       setError(toggleError instanceof Error ? toggleError.message : "Failed to update rule status");
@@ -206,7 +212,7 @@ export function AutomationConsole({ initialRules, catalog, initialEditId }: Auto
     setSimulationMessage(null);
 
     try {
-      await deleteAutomationRule(rule.id);
+      await deleteAutomationRule(rule.id, organizationId);
       setRules((current) => current.filter((item) => item.id !== rule.id));
       if (editingRuleId === rule.id) {
         cancelEdit();
@@ -226,7 +232,7 @@ export function AutomationConsole({ initialRules, catalog, initialEditId }: Auto
     };
 
     try {
-      const result = await simulateAutomationRule(rule.id, samplePayload);
+      const result = await simulateAutomationRule(rule.id, samplePayload, organizationId);
       if (!result.matched) {
         setSimulationMessage(
           result.errors.length > 0

@@ -1,6 +1,7 @@
 import { DashboardShell, type DashboardPlugin } from "../components/dashboard-shell";
 import type { AutomationCatalog } from "../lib/automation-api";
 import { fetchCoreApi } from "../lib/core-api-fetch";
+import { getDefaultOrganizationId } from "../lib/organization";
 
 interface MarketplacePreviewPlugin {
   name: string;
@@ -47,7 +48,7 @@ async function loadMarketplacePreview(): Promise<{
   plugins: MarketplacePreviewPlugin[];
   error: string | null;
 }> {
-  const organizationId = process.env.BIZFORGE_DEFAULT_ORG_ID ?? "org-demo";
+  const organizationId = getDefaultOrganizationId();
 
   try {
     const response = await fetchCoreApi("/api/marketplace/plugins", {
@@ -113,6 +114,7 @@ async function loadAutomationCatalog(): Promise<{
 }
 
 export default async function Page() {
+  const organizationId = getDefaultOrganizationId();
   const [
     { plugins, error },
     { plugins: marketplacePlugins, error: marketplaceError },
@@ -121,6 +123,7 @@ export default async function Page() {
 
   return (
     <DashboardShell
+      organizationId={organizationId}
       plugins={plugins}
       pluginLoadError={error}
       marketplacePreview={marketplacePlugins}

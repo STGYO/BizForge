@@ -1,3 +1,5 @@
+import { FALLBACK_ORG_ID } from "./organization";
+
 export interface AutomationCondition {
   field: string;
   equals: unknown;
@@ -50,7 +52,7 @@ export interface SimulationResult {
   errors: string[];
 }
 
-export const DEFAULT_ORG_ID = "org-1";
+export const DEFAULT_ORG_ID = FALLBACK_ORG_ID;
 
 function getCoreApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_CORE_API_URL ?? "http://localhost:4000";
@@ -99,13 +101,14 @@ export async function fetchAutomationCatalog(): Promise<AutomationCatalog> {
 }
 
 export async function createAutomationRule(
-  payload: AutomationRuleUpsertPayload
+  payload: AutomationRuleUpsertPayload,
+  organizationId: string = DEFAULT_ORG_ID
 ): Promise<AutomationRule> {
   const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-bizforge-org-id": DEFAULT_ORG_ID
+      "x-bizforge-org-id": organizationId
     },
     body: JSON.stringify(payload)
   });
@@ -156,12 +159,16 @@ export async function updateAutomationRule(
   return (await response.json()) as AutomationRule;
 }
 
-export async function setAutomationRuleEnabled(ruleId: string, enabled: boolean): Promise<AutomationRule> {
+export async function setAutomationRuleEnabled(
+  ruleId: string,
+  enabled: boolean,
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<AutomationRule> {
   const endpoint = enabled ? "enable" : "disable";
   const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules/${ruleId}/${endpoint}`, {
     method: "POST",
     headers: {
-      "x-bizforge-org-id": DEFAULT_ORG_ID
+      "x-bizforge-org-id": organizationId
     }
   });
 
@@ -172,11 +179,14 @@ export async function setAutomationRuleEnabled(ruleId: string, enabled: boolean)
   return (await response.json()) as AutomationRule;
 }
 
-export async function deleteAutomationRule(ruleId: string): Promise<void> {
+export async function deleteAutomationRule(
+  ruleId: string,
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<void> {
   const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules/${ruleId}`, {
     method: "DELETE",
     headers: {
-      "x-bizforge-org-id": DEFAULT_ORG_ID
+      "x-bizforge-org-id": organizationId
     }
   });
 
@@ -187,13 +197,14 @@ export async function deleteAutomationRule(ruleId: string): Promise<void> {
 
 export async function simulateAutomationRule(
   ruleId: string,
-  samplePayload: Record<string, unknown>
+  samplePayload: Record<string, unknown>,
+  organizationId: string = DEFAULT_ORG_ID
 ): Promise<SimulationResult> {
   const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules/${ruleId}/simulate`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-bizforge-org-id": DEFAULT_ORG_ID
+      "x-bizforge-org-id": organizationId
     },
     body: JSON.stringify({ samplePayload })
   });
