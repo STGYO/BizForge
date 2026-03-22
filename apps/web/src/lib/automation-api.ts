@@ -52,6 +52,22 @@ export interface SimulationResult {
   errors: string[];
 }
 
+export interface AutomationExecutionRecord {
+  id: string;
+  ruleId: string;
+  organizationId: string;
+  triggerEvent: string;
+  triggerEventId?: string;
+  matched: boolean;
+  actionsTriggered: number;
+  errors: string[];
+  status: "pending" | "success" | "partial_failure" | "failed";
+  retryCount: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const DEFAULT_ORG_ID = FALLBACK_ORG_ID;
 
 function getCoreApiBaseUrl(): string {
@@ -214,4 +230,23 @@ export async function simulateAutomationRule(
   }
 
   return (await response.json()) as SimulationResult;
+}
+
+export async function fetchAutomationRuleExecutions(
+  ruleId: string,
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<AutomationExecutionRecord[]> {
+  const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules/${ruleId}/executions`, {
+    cache: "no-store",
+    headers: {
+      "x-bizforge-org-id": organizationId
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  const payload = (await response.json()) as { executions?: AutomationExecutionRecord[] };
+  return payload.executions ?? [];
 }

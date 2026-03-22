@@ -88,7 +88,10 @@ export async function fetchAllPluginUIMetadata(): Promise<PluginUIMetadata[]> {
 
     return metadata;
   } catch (error) {
-    console.error("Failed to fetch all plugin UI metadata:", error);
+    // The dashboard treats plugin UI metadata as best-effort; avoid noisy runtime overlays.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Plugin UI metadata unavailable; continuing without plugin panels.", error);
+    }
     return [];
   }
 }

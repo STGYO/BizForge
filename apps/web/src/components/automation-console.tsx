@@ -10,8 +10,10 @@ import {
 } from "./automation-rule-builder";
 import {
   type AutomationCatalog,
+  type AutomationExecutionRecord,
   type AutomationRule,
   createAutomationRule,
+  fetchAutomationRuleExecutions,
   fetchAutomationRuleById,
   deleteAutomationRule,
   setAutomationRuleEnabled,
@@ -49,6 +51,12 @@ export function AutomationConsole({
   const [validation, setValidation] = useState<RuleDraftValidation>(createEmptyValidationResult);
   const [showValidation, setShowValidation] = useState(false);
   const [queryHydrated, setQueryHydrated] = useState(false);
+  const [simulationPayloadText, setSimulationPayloadText] = useState(
+    JSON.stringify({ source: "web", customerId: "cust-1" }, null, 2)
+  );
+  const [activeHistoryRuleId, setActiveHistoryRuleId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [executionHistory, setExecutionHistory] = useState<AutomationExecutionRecord[]>([]);
 
   function syncEditQuery(ruleId?: string): void {
     if (typeof window === "undefined") {
@@ -226,10 +234,19 @@ export function AutomationConsole({
     setError(null);
     setSimulationMessage(null);
 
-    const samplePayload: Record<string, unknown> = {
-      source: "web",
-      customerId: "cust-1"
-    };
+    let samplePayload: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(simulationPayloadText) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        setError("Simulation payload must be a JSON object.");
+        return;
+      }
+
+      samplePayload = parsed as Record<string, unknown>;
+    } catch {
+      setError("Simulation payload contains invalid JSON.");
+      return;
+    }
 
     try {
       const result = await simulateAutomationRule(rule.id, samplePayload, organizationId);
@@ -247,6 +264,24 @@ export function AutomationConsole({
       setError(
         simulationError instanceof Error ? simulationError.message : "Failed to simulate rule"
       );
+    }
+  }
+
+  async function handleLoadExecutionHistory(rule: AutomationRule): Promise<void> {
+    setError(null);
+    setSimulationMessage(null);
+    setHistoryLoading(true);
+
+    try {
+      const executions = await fetchAutomationRuleExecutions(rule.id, organizationId);
+      setExecutionHistory(executions);
+      setActiveHistoryRuleId(rule.id);
+    } catch (historyError) {
+      setError(
+        historyError instanceof Error ? historyError.message : "Failed to load execution history"
+      );
+    } finally {
+      setHistoryLoading(false);
     }
   }
 
@@ -325,6 +360,22 @@ export function AutomationConsole({
 
       <section className="rounded-2xl border border-black/10 bg-white p-4">
         <h2 className="font-display text-xl">Automation Rules</h2>
+        <div className="mt-3 rounded-xl border border-black/10 bg-surface p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-black/60">
+            Simulation Payload
+          </p>
+          <p className="mt-1 text-xs text-black/60">
+            Used when clicking Simulate on any rule.
+          </p>
+          <textarea
+            className="mt-2 h-36 w-full rounded-lg border border-black/10 bg-white p-2 font-mono text-xs focus:border-accent focus:outline-none"
+            value={simulationPayloadText}
+            onChange={(event) => {
+              setSimulationPayloadText(event.target.value);
+            }}
+          />
+        </div>
+
         {rules.length === 0 ? (
           <p className="mt-3 text-sm text-black/70">No rules found yet for this organization.</p>
         ) : (
@@ -366,6 +417,15 @@ export function AutomationConsole({
                     </button>
                     <button
                       type="button"
+                      className="rounded-lg border border-black/10 px-3 py-1 text-xs font-semibold"
+                      onClick={() => {
+                        void handleLoadExecutionHistory(rule);
+                      }}
+                    >
+                      History
+                    </button>
+                    <button
+                      type="button"
                       className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white"
                       onClick={() => {
                         void handleDeleteRule(rule);
@@ -375,6 +435,54 @@ export function AutomationConsole({
                     </button>
                   </div>
                 </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-black/10 bg-white p-4">
+        <h2 className="font-display text-xl">Execution History</h2>
+        {historyLoading ? (
+          <p className="mt-3 text-sm text-black/70">Loading execution history...</p>
+        ) : !activeHistoryRuleId ? (
+          <p className="mt-3 text-sm text-black/70">
+            Select History on a rule to inspect recent executions.
+          </p>
+        ) : executionHistory.length === 0 ? (
+          <p className="mt-3 text-sm text-black/70">No executions found yet for selected rule.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {executionHistory.map((execution) => (
+              <li key={execution.id} className="rounded-xl border border-black/10 p-3">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">{execution.triggerEvent}</p>
+                    <p className="text-xs text-black/60">{new Date(execution.createdAt).toLocaleString()}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={`rounded-full px-2 py-1 font-semibold ${
+                        execution.status === "success"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : execution.status === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {execution.status}
+                    </span>
+                    <span className="rounded-full bg-black/5 px-2 py-1 text-black/70">
+                      actions: {execution.actionsTriggered}
+                    </span>
+                    <span className="rounded-full bg-black/5 px-2 py-1 text-black/70">
+                      retries: {execution.retryCount}
+                    </span>
+                  </div>
+                </div>
+                {execution.lastError ? (
+                  <p className="mt-2 text-xs text-red-700">{execution.lastError}</p>
+                ) : null}
               </li>
             ))}
           </ul>
