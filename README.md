@@ -34,59 +34,59 @@ BizForge is a modular automation platform where business tools ship as plugins.
 ### Health and diagnostics
 
 - `GET /health`
-   - Returns service health and persistence mode.
-   - Response example:
-      - `{ "status": "ok", "service": "core-api", "persistence": "in-memory" }`
+  - Returns service health and persistence mode.
+  - Response example:
+    - `{ "status": "ok", "service": "core-api", "persistence": "in-memory" }`
 - `GET /api/runtime/diagnostics`
-   - Returns runtime diagnostics including plugin load summary.
-   - Response shape:
-      - `persistence: "in-memory" | "postgres"`
-      - `pluginLoad.scannedDirectories: number`
-      - `pluginLoad.loadedPlugins: number`
-      - `pluginLoad.skippedPlugins: number`
-      - `pluginLoad.failedPlugins: Array<{ pluginDir: string; reason: string }>`
+  - Returns runtime diagnostics including plugin load summary.
+  - Response shape:
+    - `persistence: "in-memory" | "postgres"`
+    - `pluginLoad.scannedDirectories: number`
+    - `pluginLoad.loadedPlugins: number`
+    - `pluginLoad.skippedPlugins: number`
+    - `pluginLoad.failedPlugins: Array<{ pluginDir: string; reason: string }>`
 
 ### Plugin management
 
 - `GET /api/plugins`
-   - Lists loaded plugin runtime records.
+  - Lists loaded plugin runtime records.
 - `POST /api/plugins/:name/enable`
-   - Enables a plugin runtime record.
-   - Returns `{ "status": "enabled" }` or `404` if plugin is not found.
+  - Enables a plugin runtime record.
+  - Returns `{ "status": "enabled" }` or `404` if plugin is not found.
 - `POST /api/plugins/:name/disable`
-   - Disables a plugin runtime record.
-   - Returns `{ "status": "disabled" }` or `404` if plugin is not found.
+  - Disables a plugin runtime record.
+  - Returns `{ "status": "disabled" }` or `404` if plugin is not found.
 - `GET /api/plugins/:name/meta`
-   - Returns plugin metadata and registered capabilities.
+  - Returns plugin metadata and registered capabilities.
 - `GET /api/plugins/:name/<route>`
-   - Plugin-defined routes are mounted under `/api/plugins/:name`.
+  - Plugin-defined routes are mounted under `/api/plugins/:name`.
 
 ### Automation
 
 - `GET /api/automation/catalog`
-   - Returns available triggers and actions from enabled plugins.
+  - Returns available triggers and actions from enabled plugins.
 - `GET /api/automation/rules`
-   - Requires header: `x-bizforge-org-id`.
-   - Returns rules for the specified organization.
+  - Requires header: `x-bizforge-org-id`.
+  - Returns rules for the specified organization.
 - `POST /api/automation/rules`
-   - Requires header: `x-bizforge-org-id`.
-   - Body shape:
-      - `triggerEvent: string`
-      - `conditions: Array<{ field: string; equals: unknown }>`
-      - `actions: Array<{ plugin: string; actionKey: string; input: Record<string, unknown> }>`
-      - `enabled?: boolean`
+  - Requires header: `x-bizforge-org-id`.
+  - Body shape:
+    - `triggerEvent: string`
+    - `conditions: Array<{ field: string; equals: unknown }>`
+    - `actions: Array<{ plugin: string; actionKey: string; input: Record<string, unknown> }>`
+    - `enabled?: boolean`
 
 ## Validation and error semantics
 
 - `400 Bad Request`
-   - Missing `x-bizforge-org-id` header on automation routes.
-   - Invalid automation rule payload shape.
-   - Invalid plugin name parameter.
-   - Rule validation failures (for example, unknown plugin or unknown action key).
+  - Missing `x-bizforge-org-id` header on automation routes.
+  - Invalid automation rule payload shape.
+  - Invalid plugin name parameter.
+  - Rule validation failures (for example, unknown plugin or unknown action key).
 - `404 Not Found`
-   - Plugin enable/disable requested for a plugin that is not loaded.
+  - Plugin enable/disable requested for a plugin that is not loaded.
 - `409 Conflict`
-   - Request hits a plugin-defined route for a plugin that is currently disabled.
+  - Request hits a plugin-defined route for a plugin that is currently disabled.
 
 ## API examples
 

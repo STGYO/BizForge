@@ -157,7 +157,7 @@ export class PluginEngine {
 
       for (const route of registration.routes ?? []) {
         claimedRoutes.set(
-          this.routeSignature(route.method, route.path),
+          this.routeSignature(manifest.name, route.method, route.path),
           manifest.name
         );
       }
@@ -288,9 +288,18 @@ export class PluginEngine {
     registration: PluginRegistration
   ): string[] {
     const conflicts: string[] = [];
+    const seenRoutes = new Set<string>();
 
     for (const route of registration.routes ?? []) {
-      const signature = this.routeSignature(route.method, route.path);
+      const signature = this.routeSignature(pluginName, route.method, route.path);
+
+      if (seenRoutes.has(signature)) {
+        conflicts.push(`${signature} is duplicated within ${pluginName}`);
+        continue;
+      }
+
+      seenRoutes.add(signature);
+
       const owner = claimedRoutes.get(signature);
       if (owner && owner !== pluginName) {
         conflicts.push(`${signature} already claimed by ${owner}`);
@@ -300,7 +309,7 @@ export class PluginEngine {
     return conflicts;
   }
 
-  private routeSignature(method: string, pathValue: string): string {
-    return `${method.toUpperCase()} ${pathValue}`;
+  private routeSignature(pluginName: string, method: string, pathValue: string): string {
+    return `${pluginName}:${method.toUpperCase()} ${pathValue}`;
   }
 }

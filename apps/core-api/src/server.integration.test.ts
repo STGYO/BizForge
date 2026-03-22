@@ -126,7 +126,7 @@ test("createServer loads plugin from PLUGINS_DIR and mounts plugin routes", asyn
   }
 });
 
-test("createServer reports route-conflicting plugin as skipped in diagnostics", async () => {
+test("createServer loads plugins that share route paths under separate namespaces", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bizforge-server-it-conflict-"));
   const pluginOneDir = path.join(tempRoot, "plugin-one");
   const pluginTwoDir = path.join(tempRoot, "plugin-two");
@@ -196,15 +196,26 @@ test("createServer reports route-conflicting plugin as skipped in diagnostics", 
       };
 
       assert.equal(diagnostics.pluginLoad.scannedDirectories, 2);
-      assert.equal(diagnostics.pluginLoad.loadedPlugins, 1);
-      assert.equal(diagnostics.pluginLoad.skippedPlugins, 1);
-      assert.equal(diagnostics.pluginLoad.failedPlugins.length, 1);
-      assert.match(diagnostics.pluginLoad.failedPlugins[0]?.reason ?? "", /Route conflicts detected/i);
+      assert.equal(diagnostics.pluginLoad.loadedPlugins, 2);
+      assert.equal(diagnostics.pluginLoad.skippedPlugins, 0);
+      assert.equal(diagnostics.pluginLoad.failedPlugins.length, 0);
 
       const pluginListResponse = await server.inject({ method: "GET", url: "/api/plugins" });
       assert.equal(pluginListResponse.statusCode, 200);
       const plugins = pluginListResponse.json() as Array<{ manifest: { name: string } }>;
-      assert.equal(plugins.length, 1);
+      assert.equal(plugins.length, 2);
+
+      const pluginOneRouteResponse = await server.inject({
+        method: "GET",
+        url: "/api/plugins/plugin-one/ping"
+      });
+      assert.equal(pluginOneRouteResponse.statusCode, 200);
+
+      const pluginTwoRouteResponse = await server.inject({
+        method: "GET",
+        url: "/api/plugins/plugin-two/ping"
+      });
+      assert.equal(pluginTwoRouteResponse.statusCode, 200);
     } finally {
       await server.close();
     }

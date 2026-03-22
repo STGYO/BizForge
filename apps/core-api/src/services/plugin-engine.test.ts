@@ -79,8 +79,8 @@ test("loads plugins and reports skipped entries", async () => {
   }
 });
 
-test("skips plugin when route conflicts with an already loaded plugin", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bizforge-plugin-engine-conflict-"));
+test("loads plugins that share route paths because routes are namespaced by plugin", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bizforge-plugin-engine-namespaced-"));
 
   try {
     const pluginOneRoot = path.join(tempRoot, "plugin-one");
@@ -137,15 +137,74 @@ test("skips plugin when route conflicts with an already loaded plugin", async ()
     await engine.loadInstalledPlugins();
 
     const plugins = engine.list();
-    assert.equal(plugins.length, 1);
+    assert.equal(plugins.length, 2);
     assert.equal(plugins[0]?.manifest.name, "plugin-one");
+    assert.equal(plugins[1]?.manifest.name, "plugin-two");
 
     const report = engine.getLoadReport();
     assert.equal(report.scannedDirectories, 2);
-    assert.equal(report.loadedPlugins, 1);
+    assert.equal(report.loadedPlugins, 2);
+    assert.equal(report.skippedPlugins, 0);
+    assert.equal(report.failedPlugins.length, 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("skips plugin when it declares duplicate routes within its own registration", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bizforge-plugin-engine-duplicate-"));
+
+  try {
+    const pluginRoot = path.join(tempRoot, "duplicate-plugin");
+
+    await mkdir(path.join(pluginRoot, "dist", "server"), { recursive: true });
+
+    await writeFile(
+      path.join(pluginRoot, "plugin.json"),
+      createPluginManifest("duplicate-plugin", "dist/server/index.js"),
+      "utf-8"
+    );
+
+    await writeFile(
+      path.join(pluginRoot, "dist", "server", "index.js"),
+      [
+        "export const registration = {",
+        "  manifest: {",
+        "    name: 'duplicate-plugin',",
+        "    version: '1.0.0',",
+        "    author: 'BizForge',",
+        "    permissions: ['automation'],",
+        "    activationEvents: ['onStartup'],",
+        "    backendEntry: 'dist/server/index.js',",
+        "    frontendEntry: 'dist/ui/index.js'",
+        "  },",
+        "  routes: [",
+        "    { method: 'GET', path: '/records', handlerName: 'listRecords' },",
+        "    { method: 'GET', path: '/records', handlerName: 'listRecordsAgain' }",
+        "  ],",
+        "  triggers: [],",
+        "  actions: [],",
+        "  handlers: {",
+        "    listRecords: async () => ({ ok: true }),",
+        "    listRecordsAgain: async () => ({ ok: true })",
+        "  }",
+        "};"
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const engine = new PluginEngine({ pluginsDir: tempRoot });
+    await engine.loadInstalledPlugins();
+
+    const plugins = engine.list();
+    assert.equal(plugins.length, 0);
+
+    const report = engine.getLoadReport();
+    assert.equal(report.scannedDirectories, 1);
+    assert.equal(report.loadedPlugins, 0);
     assert.equal(report.skippedPlugins, 1);
     assert.equal(report.failedPlugins.length, 1);
-    assert.match(report.failedPlugins[0]?.reason ?? "", /Route conflicts detected/i);
+    assert.match(report.failedPlugins[0]?.reason ?? "", /duplicated within duplicate-plugin/i);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
