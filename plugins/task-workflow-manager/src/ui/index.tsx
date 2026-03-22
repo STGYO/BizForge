@@ -4,7 +4,7 @@ export function PluginPanel() {
   return (
     <section>
       <h3>Task Workflow Manager</h3>
-      <p>Task assignment, workflow execution, and operational deadline tracking.</p>
+      <p>Task orchestration hub for assignment, status progression, and completion events.</p>
     </section>
   );
 }

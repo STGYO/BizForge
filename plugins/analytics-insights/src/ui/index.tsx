@@ -4,7 +4,7 @@ export function PluginPanel() {
   return (
     <section>
       <h3>Analytics Insights</h3>
-      <p>Business metrics, conversion funnels, and operational dashboards.</p>
+      <p>Event-driven KPI reporting with revenue and conversion threshold signals.</p>
     </section>
   );
 }

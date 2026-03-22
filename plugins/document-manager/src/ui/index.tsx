@@ -4,7 +4,7 @@ export function PluginPanel() {
   return (
     <section>
       <h3>Document Manager</h3>
-      <p>Document storage, linkage, versioning, and controlled sharing.</p>
+      <p>Versioned document lifecycle with customer linkage and share-state events.</p>
     </section>
   );
 }

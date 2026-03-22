@@ -1,4 +1,5 @@
 ﻿import type {
+  EventEnvelope,
   PluginManifest,
   PluginPermission,
   PluginRegistration,
@@ -11,46 +12,203 @@ const typedManifest = {
   permissions: manifest.permissions as PluginPermission[]
 } as PluginManifest;
 
+type MetricKind = "lead" | "message" | "invoice";
+
+interface AnalyticsEvent {
+  id: string;
+  metric: MetricKind;
+  value: number;
+  occurredAt: string;
+}
+
+interface KpiReport {
+  id: string;
+  generatedAt: string;
+  leads: number;
+  conversions: number;
+  conversionRate: number;
+  messagesSent: number;
+  invoicesPaid: number;
+  revenue: number;
+}
+
+const analyticsEvents: AnalyticsEvent[] = [];
+const reports: KpiReport[] = [];
+
+function makeId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getOrganizationId(payload: Record<string, unknown>): string {
+  return String(payload.organizationId ?? "org-1");
+}
+
+function normalizeMetric(value: unknown): MetricKind {
+  const candidate = String(value ?? "lead").toLowerCase();
+  if (candidate === "message" || candidate === "invoice") {
+    return candidate;
+  }
+
+  return "lead";
+}
+
+function publishEvent(
+  type: string,
+  payload: Record<string, unknown>,
+  organizationId: string,
+  occurredAt: string,
+  sourcePlugin: string
+): EventEnvelope<Record<string, unknown>> {
+  return {
+    eventId: makeId("evt"),
+    eventType: type,
+    occurredAt,
+    organizationId,
+    sourcePlugin,
+    schemaVersion: 1,
+    payload
+  };
+}
+
+function roundMetric(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function buildReport(): KpiReport {
+  const leads = analyticsEvents.filter((entry) => entry.metric === "lead" && entry.value > 0).length;
+  const conversions = analyticsEvents.filter(
+    (entry) => entry.metric === "lead" && entry.value >= 100
+  ).length;
+  const conversionRate = leads === 0 ? 0 : roundMetric((conversions / leads) * 100);
+  const messagesSent = analyticsEvents
+    .filter((entry) => entry.metric === "message")
+    .reduce((sum, entry) => sum + entry.value, 0);
+  const paidInvoices = analyticsEvents
+    .filter((entry) => entry.metric === "invoice")
+    .reduce((sum, entry) => sum + 1, 0);
+  const revenue = analyticsEvents
+    .filter((entry) => entry.metric === "invoice")
+    .reduce((sum, entry) => sum + entry.value, 0);
+
+  return {
+    id: makeId("rpt"),
+    generatedAt: new Date().toISOString(),
+    leads,
+    conversions,
+    conversionRate,
+    messagesSent,
+    invoicesPaid: paidInvoices,
+    revenue: roundMetric(revenue)
+  };
+}
+
 const listRecords: PluginHandler = async () => {
   return {
     plugin: typedManifest.name,
-    records: []
+    reports,
+    eventsIngested: analyticsEvents.length
   };
 };
 
 const createRecord: PluginHandler = async ({ body }, context) => {
   const payload = (body ?? {}) as Record<string, unknown>;
-  const record = {
-    id: `${typedManifest.name.replace(/-/g, "_")}-${Date.now()}`, 
-    title: String(payload.title ?? "Analytics Insights Record"),
-    createdAt: new Date().toISOString()
+  const event: AnalyticsEvent = {
+    id: makeId("ae"),
+    metric: normalizeMetric(payload.metric),
+    value: Number(payload.value ?? 1),
+    occurredAt: String(payload.occurredAt ?? new Date().toISOString())
   };
+  analyticsEvents.unshift(event);
 
-  await context.eventBus.publish({
-    eventId: `evt-${typedManifest.name}-${Date.now()}`, 
-    eventType: "analytics.report.generated",
-    occurredAt: new Date().toISOString(),
-    organizationId: String(payload.organizationId ?? "org-1"),
-    sourcePlugin: typedManifest.name,
-    schemaVersion: 1,
-    payload: {
-      recordId: record.id,
-      title: record.title
-    }
-  });
+  const generated = buildReport();
+  reports.unshift(generated);
+
+  const orgId = getOrganizationId(payload);
+  await context.eventBus.publish(
+    publishEvent(
+      "analytics.report.generated",
+      {
+        reportId: generated.id,
+        revenue: generated.revenue,
+        conversionRate: generated.conversionRate,
+        eventsIngested: analyticsEvents.length
+      },
+      orgId,
+      generated.generatedAt,
+      typedManifest.name
+    )
+  );
+
+  const threshold = Number(payload.revenueThreshold ?? 1000);
+  if (generated.revenue >= threshold) {
+    await context.eventBus.publish(
+      publishEvent(
+        "analytics.kpi.threshold_breached",
+        {
+          reportId: generated.id,
+          metric: "revenue",
+          value: generated.revenue,
+          threshold
+        },
+        orgId,
+        generated.generatedAt,
+        typedManifest.name
+      )
+    );
+  }
 
   return {
     created: true,
-    record
+    event,
+    report: generated
   };
 };
 
-const pluginAction: PluginHandler = async ({ actionInput }) => {
+const generateReport: PluginHandler = async ({ body, actionInput }, context) => {
+  const payload = ((actionInput ?? body) ?? {}) as Record<string, unknown>;
+  const generated = buildReport();
+  reports.unshift(generated);
+
+  const orgId = getOrganizationId(payload);
+  await context.eventBus.publish(
+    publishEvent(
+      "analytics.report.generated",
+      {
+        reportId: generated.id,
+        revenue: generated.revenue,
+        conversionRate: generated.conversionRate,
+        eventsIngested: analyticsEvents.length
+      },
+      orgId,
+      generated.generatedAt,
+      typedManifest.name
+    )
+  );
+
+  return {
+    ok: true,
+    report: generated
+  };
+};
+
+const pluginAction: PluginHandler = async ({ actionInput }, context) => {
+  const payload = (actionInput ?? {}) as Record<string, unknown>;
+  const result = (await generateReport(
+    {
+      body: payload,
+      query: {},
+      params: {},
+      headers: {},
+      actionInput: payload
+    },
+    context
+  )) as Record<string, unknown>;
+
   return {
     ok: true,
     plugin: typedManifest.name,
     action: "generate_kpi_report",
-    input: actionInput ?? {}
+    report: result.report
   };
 };
 
@@ -59,6 +217,7 @@ export const pluginRegistration: PluginRegistration = {
   handlers: {
     listRecords,
     createRecord,
+    generateReport,
     pluginAction
   },
   routes: [
@@ -71,6 +230,11 @@ export const pluginRegistration: PluginRegistration = {
       method: "POST",
       path: "/records",
       handlerName: "createRecord"
+    },
+    {
+      method: "POST",
+      path: "/reports/generate",
+      handlerName: "generateReport"
     }
   ],
   triggers: [
@@ -78,6 +242,11 @@ export const pluginRegistration: PluginRegistration = {
       key: "analytics_report_generated",
       displayName: "Analytics Insights Updated",
       eventType: "analytics.report.generated"
+    },
+    {
+      key: "analytics_kpi_threshold_breached",
+      displayName: "Analytics KPI Threshold Breached",
+      eventType: "analytics.kpi.threshold_breached"
     }
   ],
   actions: [
@@ -88,10 +257,10 @@ export const pluginRegistration: PluginRegistration = {
       inputSchema: {
         type: "object",
         properties: {
-          entityId: { type: "string" },
-          note: { type: "string" }
+          revenueThreshold: { type: "number" },
+          reportName: { type: "string" }
         },
-        required: ["entityId"]
+        required: []
       }
     }
   ]
