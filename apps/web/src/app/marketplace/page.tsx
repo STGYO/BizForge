@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { fetchCoreApi } from "../../lib/core-api-fetch";
 
 interface MarketplacePlugin {
   name: string;
@@ -11,20 +12,15 @@ interface MarketplacePlugin {
   installed: boolean;
 }
 
-function getCoreApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_CORE_API_URL ?? "http://localhost:4000";
-}
-
 function getDefaultOrganizationId(): string {
   return process.env.BIZFORGE_DEFAULT_ORG_ID ?? "org-demo";
 }
 
 async function loadMarketplace(): Promise<{ plugins: MarketplacePlugin[]; error: string | null }> {
-  const baseUrl = getCoreApiBaseUrl();
   const organizationId = getDefaultOrganizationId();
 
   try {
-    const response = await fetch(`${baseUrl}/api/marketplace/plugins`, {
+    const response = await fetchCoreApi("/api/marketplace/plugins", {
       cache: "no-store",
       headers: {
         "x-bizforge-org-id": organizationId
@@ -53,10 +49,9 @@ async function installPlugin(formData: FormData): Promise<void> {
     return;
   }
 
-  const baseUrl = getCoreApiBaseUrl();
   const organizationId = getDefaultOrganizationId();
 
-  await fetch(`${baseUrl}/api/marketplace/plugins/${pluginName}/install`, {
+  await fetchCoreApi(`/api/marketplace/plugins/${pluginName}/install`, {
     method: "POST",
     headers: {
       "x-bizforge-org-id": organizationId
@@ -75,10 +70,9 @@ async function uninstallPlugin(formData: FormData): Promise<void> {
     return;
   }
 
-  const baseUrl = getCoreApiBaseUrl();
   const organizationId = getDefaultOrganizationId();
 
-  await fetch(`${baseUrl}/api/marketplace/plugins/${pluginName}/uninstall`, {
+  await fetchCoreApi(`/api/marketplace/plugins/${pluginName}/uninstall`, {
     method: "POST",
     headers: {
       "x-bizforge-org-id": organizationId

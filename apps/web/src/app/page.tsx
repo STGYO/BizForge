@@ -1,5 +1,6 @@
 import { DashboardShell, type DashboardPlugin } from "../components/dashboard-shell";
 import type { AutomationCatalog } from "../lib/automation-api";
+import { fetchCoreApi } from "../lib/core-api-fetch";
 
 interface MarketplacePreviewPlugin {
   name: string;
@@ -9,10 +10,8 @@ interface MarketplacePreviewPlugin {
 }
 
 async function loadPlugins(): Promise<{ plugins: DashboardPlugin[]; error: string | null }> {
-  const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? "http://localhost:4000";
-
   try {
-    const response = await fetch(`${baseUrl}/api/plugins`, {
+    const response = await fetchCoreApi("/api/plugins", {
       cache: "no-store"
     });
 
@@ -48,11 +47,10 @@ async function loadMarketplacePreview(): Promise<{
   plugins: MarketplacePreviewPlugin[];
   error: string | null;
 }> {
-  const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? "http://localhost:4000";
   const organizationId = process.env.BIZFORGE_DEFAULT_ORG_ID ?? "org-demo";
 
   try {
-    const response = await fetch(`${baseUrl}/api/marketplace/plugins`, {
+    const response = await fetchCoreApi("/api/marketplace/plugins", {
       cache: "no-store",
       headers: {
         "x-bizforge-org-id": organizationId
@@ -89,10 +87,8 @@ async function loadAutomationCatalog(): Promise<{
   catalog: AutomationCatalog | null;
   error: string | null;
 }> {
-  const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? "http://localhost:4000";
-
   try {
-    const response = await fetch(`${baseUrl}/api/automation/catalog`, {
+    const response = await fetchCoreApi("/api/automation/catalog", {
       cache: "no-store"
     });
 
