@@ -3,6 +3,29 @@ import type { AutomationCatalog } from "../lib/automation-api";
 import { fetchCoreApi } from "../lib/core-api-fetch";
 import { getDefaultOrganizationId } from "../lib/organization";
 
+interface RuntimeDeadLetter {
+  id: string;
+  eventType: string;
+  eventId: string;
+  organizationId: string;
+  handlerId: string;
+  errorMessage: string;
+  failedAt: string;
+}
+
+interface RuntimeDiagnostics {
+  persistence: string;
+  pluginLoad: unknown;
+  eventDelivery: {
+    publishedCount: number;
+    deliveredCount: number;
+    failedDeliveryCount: number;
+    subscriberCount: number;
+    subscribersByEventType: Record<string, number>;
+    deadLetters: RuntimeDeadLetter[];
+  } | null;
+}
+
 interface MarketplacePreviewPlugin {
   name: string;
   version: string;
@@ -113,13 +136,48 @@ async function loadAutomationCatalog(): Promise<{
   }
 }
 
+async function loadRuntimeDiagnostics(): Promise<{
+  diagnostics: RuntimeDiagnostics | null;
+  error: string | null;
+}> {
+  try {
+    const response = await fetchCoreApi("/api/runtime/diagnostics", {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      return {
+        diagnostics: null,
+        error: `Unable to load runtime diagnostics (${response.status})`
+      };
+    }
+
+    const data = (await response.json()) as RuntimeDiagnostics;
+    return {
+      diagnostics: data,
+      error: null
+    };
+  } catch {
+    return {
+      diagnostics: null,
+      error: "Unable to connect to core API"
+    };
+  }
+}
+
 export default async function Page() {
   const organizationId = getDefaultOrganizationId();
   const [
     { plugins, error },
     { plugins: marketplacePlugins, error: marketplaceError },
-    { catalog: automationCatalog, error: automationCatalogError }
-  ] = await Promise.all([loadPlugins(), loadMarketplacePreview(), loadAutomationCatalog()]);
+    { catalog: automationCatalog, error: automationCatalogError },
+    { diagnostics: runtimeDiagnostics, error: runtimeDiagnosticsError }
+  ] = await Promise.all([
+    loadPlugins(),
+    loadMarketplacePreview(),
+    loadAutomationCatalog(),
+    loadRuntimeDiagnostics()
+  ]);
 
   return (
     <DashboardShell
@@ -130,6 +188,8 @@ export default async function Page() {
       marketplaceLoadError={marketplaceError}
       automationCatalog={automationCatalog}
       automationCatalogLoadError={automationCatalogError}
+      runtimeDiagnostics={runtimeDiagnostics}
+      runtimeDiagnosticsLoadError={runtimeDiagnosticsError}
     />
   );
 }

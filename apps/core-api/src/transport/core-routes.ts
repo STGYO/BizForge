@@ -70,6 +70,10 @@ const automationSimulationBodySchema = z.object({
   samplePayload: z.record(z.any())
 });
 
+const runtimeDeadLetterParamsSchema = z.object({
+  id: z.string().min(1)
+});
+
 export async function registerCoreRoutes(
   server: FastifyInstance,
   runtime: BizForgeRuntime
@@ -110,8 +114,44 @@ export async function registerCoreRoutes(
 
   server.get("/api/runtime/diagnostics", async () => ({
     persistence: runtime.persistence,
-    pluginLoad: runtime.pluginEngine.getLoadReport()
+    pluginLoad: runtime.pluginEngine.getLoadReport(),
+    eventDelivery:
+      typeof runtime.eventBus.getDiagnostics === "function"
+        ? runtime.eventBus.getDiagnostics()
+        : null
   }));
+
+  server.get("/api/runtime/event-delivery/dead-letters", async (request, reply) => {
+    const diagnostics =
+      typeof runtime.eventBus.getDiagnostics === "function"
+        ? runtime.eventBus.getDiagnostics()
+        : null;
+
+    if (!diagnostics) {
+      return reply.code(501).send({ error: "Event bus diagnostics unavailable" });
+    }
+
+    return { deadLetters: diagnostics.deadLetters };
+  });
+
+  server.post("/api/runtime/event-delivery/dead-letters/:id/acknowledge", async (request, reply) => {
+    const parsedParams = runtimeDeadLetterParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid dead-letter id" });
+    }
+
+    const params = parsedParams.data;
+    if (typeof runtime.eventBus.acknowledgeDeadLetter !== "function") {
+      return reply.code(501).send({ error: "Event bus acknowledgement unavailable" });
+    }
+
+    const acknowledged = runtime.eventBus.acknowledgeDeadLetter(params.id);
+    if (!acknowledged) {
+      return reply.code(404).send({ error: "Dead-letter not found" });
+    }
+
+    return { status: "acknowledged", deadLetterId: params.id };
+  });
 
   server.get("/api/plugins", async () => {
     return runtime.pluginEngine.list();

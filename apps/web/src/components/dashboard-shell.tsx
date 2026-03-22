@@ -25,6 +25,27 @@ interface MarketplacePreviewPlugin {
   installed: boolean;
 }
 
+interface RuntimeDeadLetter {
+  id: string;
+  eventType: string;
+  eventId: string;
+  handlerId: string;
+  errorMessage: string;
+  failedAt: string;
+}
+
+interface RuntimeDiagnostics {
+  persistence: string;
+  eventDelivery: {
+    publishedCount: number;
+    deliveredCount: number;
+    failedDeliveryCount: number;
+    subscriberCount: number;
+    subscribersByEventType: Record<string, number>;
+    deadLetters: RuntimeDeadLetter[];
+  } | null;
+}
+
 interface DashboardShellProps {
   organizationId: string;
   plugins: DashboardPlugin[];
@@ -33,6 +54,8 @@ interface DashboardShellProps {
   marketplaceLoadError: string | null;
   automationCatalog: AutomationCatalog | null;
   automationCatalogLoadError: string | null;
+  runtimeDiagnostics: RuntimeDiagnostics | null;
+  runtimeDiagnosticsLoadError: string | null;
 }
 
 export function DashboardShell({
@@ -42,7 +65,9 @@ export function DashboardShell({
   marketplacePreview,
   marketplaceLoadError,
   automationCatalog,
-  automationCatalogLoadError
+  automationCatalogLoadError,
+  runtimeDiagnostics,
+  runtimeDiagnosticsLoadError
 }: DashboardShellProps) {
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [automationModalOpen, setAutomationModalOpen] = useState(false);
@@ -194,6 +219,72 @@ export function DashboardShell({
               <p className="mt-2 text-sm text-black/70">
                 Build rules with trigger, condition, and action chains that invoke plugin capabilities.
               </p>
+            </article>
+
+            <article className="rounded-2xl border border-black/10 bg-white p-4">
+              <h2 className="font-display text-lg">Event Delivery</h2>
+              {runtimeDiagnosticsLoadError ? (
+                <p className="mt-2 text-sm text-red-700">{runtimeDiagnosticsLoadError}</p>
+              ) : runtimeDiagnostics?.eventDelivery ? (
+                <div className="mt-3 space-y-3 text-sm text-black/70">
+                  <div className="grid gap-2 md:grid-cols-4">
+                    <div className="rounded-xl bg-black/5 p-3">
+                      <p className="text-xs uppercase tracking-wide text-black/50">Published</p>
+                      <p className="mt-1 text-lg font-semibold text-black">{runtimeDiagnostics.eventDelivery.publishedCount}</p>
+                    </div>
+                    <div className="rounded-xl bg-black/5 p-3">
+                      <p className="text-xs uppercase tracking-wide text-black/50">Delivered</p>
+                      <p className="mt-1 text-lg font-semibold text-black">{runtimeDiagnostics.eventDelivery.deliveredCount}</p>
+                    </div>
+                    <div className="rounded-xl bg-black/5 p-3">
+                      <p className="text-xs uppercase tracking-wide text-black/50">Failures</p>
+                      <p className="mt-1 text-lg font-semibold text-black">{runtimeDiagnostics.eventDelivery.failedDeliveryCount}</p>
+                    </div>
+                    <div className="rounded-xl bg-black/5 p-3">
+                      <p className="text-xs uppercase tracking-wide text-black/50">Subscribers</p>
+                      <p className="mt-1 text-lg font-semibold text-black">{runtimeDiagnostics.eventDelivery.subscriberCount}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-black/50">
+                      Subscribers by Event Type
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {Object.entries(runtimeDiagnostics.eventDelivery.subscribersByEventType).map(
+                        ([eventType, count]) => (
+                          <span key={eventType} className="rounded-full bg-black/5 px-3 py-1 text-xs text-black/70">
+                            {eventType}: {count}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-black/50">
+                      Dead Letters
+                    </p>
+                    {runtimeDiagnostics.eventDelivery.deadLetters.length === 0 ? (
+                      <p className="mt-2 text-sm text-black/60">No delivery dead letters recorded.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-2">
+                        {runtimeDiagnostics.eventDelivery.deadLetters.slice(0, 3).map((deadLetter) => (
+                          <li key={deadLetter.id} className="rounded-xl border border-black/10 p-3 text-xs">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold text-black">{deadLetter.eventType}</span>
+                              <span className="text-black/50">{new Date(deadLetter.failedAt).toLocaleString()}</span>
+                            </div>
+                            <p className="mt-1 text-black/60">{deadLetter.errorMessage}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-black/60">No runtime event delivery diagnostics available.</p>
+              )}
             </article>
           </main>
         </section>

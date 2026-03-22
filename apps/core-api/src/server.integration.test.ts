@@ -103,6 +103,9 @@ test("createServer loads plugin from PLUGINS_DIR and mounts plugin routes", asyn
       assert.equal(diagnostics.persistence, "in-memory");
       assert.equal(diagnostics.pluginLoad.scannedDirectories, 1);
       assert.equal(diagnostics.pluginLoad.loadedPlugins, 1);
+      assert.ok(diagnostics.eventDelivery);
+      assert.equal(diagnostics.eventDelivery?.subscriberCount ?? 0, 3);
+      assert.ok(Array.isArray(diagnostics.eventDelivery?.deadLetters));
     } finally {
       await server.close();
     }

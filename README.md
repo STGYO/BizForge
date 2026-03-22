@@ -108,8 +108,26 @@ Example response:
       "loadedPlugins": 1,
       "skippedPlugins": 0,
       "failedPlugins": []
+   },
+   "eventDelivery": {
+      "publishedCount": 0,
+      "deliveredCount": 0,
+      "failedDeliveryCount": 0,
+      "subscriberCount": 0,
+      "subscribersByEventType": {},
+      "deadLetters": []
    }
 }
+```
+
+### Event delivery diagnostics
+
+```bash
+curl -s http://localhost:4000/api/runtime/event-delivery/dead-letters
+```
+
+```bash
+curl -s -X POST http://localhost:4000/api/runtime/event-delivery/dead-letters/<id>/acknowledge
 ```
 
 ### List plugins
