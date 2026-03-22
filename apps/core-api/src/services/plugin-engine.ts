@@ -157,7 +157,7 @@ export class PluginEngine {
 
       for (const route of registration.routes ?? []) {
         claimedRoutes.set(
-          this.routeSignature(manifest.name, route.method, route.path),
+          this.routeSignature(route.method, route.path),
           manifest.name
         );
       }
@@ -290,7 +290,7 @@ export class PluginEngine {
     const conflicts: string[] = [];
 
     for (const route of registration.routes ?? []) {
-      const signature = this.routeSignature(pluginName, route.method, route.path);
+      const signature = this.routeSignature(route.method, route.path);
       const owner = claimedRoutes.get(signature);
       if (owner && owner !== pluginName) {
         conflicts.push(`${signature} already claimed by ${owner}`);
@@ -300,7 +300,7 @@ export class PluginEngine {
     return conflicts;
   }
 
-  private routeSignature(pluginName: string, method: string, pathValue: string): string {
-    return `${method.toUpperCase()} /api/plugins/${pluginName}${pathValue}`;
+  private routeSignature(method: string, pathValue: string): string {
+    return `${method.toUpperCase()} ${pathValue}`;
   }
 }

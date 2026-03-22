@@ -20,6 +20,15 @@ export interface PluginManifest {
   activationEvents: string[];
   backendEntry: string;
   frontendEntry: string;
+  ui?: {
+    slots?: Record<string, {
+      displayName: string;
+      layout?: "panel" | "card" | "modal" | "sidebar";
+      componentRequired?: boolean;
+    }>;
+    entry?: string;
+    exposedComponents?: string[];
+  };
 }
 
 export interface EventEnvelope<TPayload = unknown> {
@@ -110,10 +119,35 @@ export interface AutomationActionDefinition {
   inputSchema: Record<string, unknown>;
 }
 
+export interface PluginUISlotDescriptor {
+  pluginName: string;
+  slotName: string;
+  displayName: string;
+  layout: "panel" | "card" | "modal" | "sidebar";
+  componentRequired: boolean;
+}
+
+export interface PluginUIComponentManifest {
+  pluginName: string;
+  componentNames: string[];
+  slots: PluginUISlotDescriptor[];
+  componentUrl: string;
+  integrity?: string;
+}
+
+export interface PluginSandboxMessage {
+  type: "request" | "response" | "event";
+  id?: string;
+  channel: string;
+  payload: unknown;
+  error?: { message: string; code: string };
+}
+
 export interface PluginRegistration {
   manifest: PluginManifest;
   routes?: PluginRouteDefinition[];
   triggers?: AutomationTriggerDefinition[];
   actions?: AutomationActionDefinition[];
   handlers?: Record<string, PluginHandler>;
+  uiComponents?: PluginUIComponentManifest;
 }

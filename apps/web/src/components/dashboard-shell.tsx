@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   AutomationRuleBuilder,
   createEmptyDraft,
@@ -9,6 +9,8 @@ import {
   type RuleDraft
 } from "./automation-rule-builder";
 import { createAutomationRule, type AutomationCatalog } from "../lib/automation-api";
+import { PluginUISlot } from "./plugin-ui-slot";
+import { fetchAllPluginUIMetadata, type PluginUIMetadata } from "../lib/plugin-ui-metadata";
 
 export interface DashboardPlugin {
   name: string;
@@ -47,6 +49,8 @@ export function DashboardShell({
   const [automationSubmitting, setAutomationSubmitting] = useState(false);
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [automationSuccess, setAutomationSuccess] = useState<string | null>(null);
+  const [pluginUIMetadata, setPluginUIMetadata] = useState<PluginUIMetadata[]>([]);
+  const [pluginUILoading, setPluginUILoading] = useState(true);
   const [automationDraft, setAutomationDraft] = useState<RuleDraft>(() =>
     automationCatalog ? createEmptyDraft(automationCatalog) : {
       triggerEvent: "",
@@ -55,6 +59,21 @@ export function DashboardShell({
       enabled: true
     }
   );
+
+  useEffect(() => {
+    async function loadPluginUIs() {
+      setPluginUILoading(true);
+      try {
+        const metadata = await fetchAllPluginUIMetadata();
+        setPluginUIMetadata(metadata);
+      } catch (error) {
+        console.error("Failed to load plugin UI metadata:", error);
+      } finally {
+        setPluginUILoading(false);
+      }
+    }
+    loadPluginUIs();
+  }, []);
 
   async function handleQuickCreate(): Promise<void> {
     if (!automationCatalog) {
@@ -154,13 +173,22 @@ export function DashboardShell({
             </div>
           </header>
 
-          <main className="grid gap-4 md:grid-cols-2">
-            <article className="rounded-2xl border border-black/10 bg-white p-4">
-              <h2 className="font-display text-lg">Plugin Workspace</h2>
-              <p className="mt-2 text-sm text-black/70">
-                Plugin UIs render here through dynamic extension slots registered by plugin manifests.
-              </p>
-            </article>
+          <main className="space-y-4">
+            <section className="rounded-2xl border border-black/10 bg-white p-4">
+              <h2 className="font-display text-lg mb-4">Plugin Workspace</h2>
+              {pluginUILoading ? (
+                <div className="text-sm text-black/60 py-8">Loading plugin interfaces...</div>
+              ) : pluginUIMetadata.length === 0 ? (
+                <div className="text-sm text-black/60 py-8">No plugin UIs available. Install plugins from the Marketplace.</div>
+              ) : (
+                <PluginUISlot
+                  slotName="dashboard-main"
+                  layout="panel"
+                  plugins={pluginUIMetadata}
+                  organizationId={organizationId}
+                />
+              )}
+            </section>
             <article className="rounded-2xl border border-black/10 bg-white p-4">
               <h2 className="font-display text-lg">Automation Engine</h2>
               <p className="mt-2 text-sm text-black/70">

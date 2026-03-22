@@ -4,6 +4,8 @@ import { InMemoryEventBus } from "./services/event-bus";
 import { AutomationEngine } from "./services/automation-engine";
 import { MigrationRunner } from "./services/migration-runner";
 import { createPluginDatabaseClient } from "./services/plugin-database";
+import { RetryQueue } from "./services/retry-queue";
+import { AutomationAuditRepository } from "./repositories/automation-audit-repository";
 import { registerCoreRoutes } from "./transport/core-routes";
 import { registerPluginRoutes } from "./transport/plugin-routes";
 import { checkPostgresHealth, getPgPool } from "./db/postgres";
@@ -18,6 +20,7 @@ export interface BizForgeRuntime {
   pluginEngine: PluginEngine;
   eventBus: InMemoryEventBus;
   automationEngine: AutomationEngine;
+  automationAuditRepository?: AutomationAuditRepository;
   pluginDatabase: PluginDatabaseClient;
   persistence: "in-memory" | "postgres";
 }
@@ -42,11 +45,18 @@ export async function createServer(): Promise<FastifyInstance> {
       : new InMemoryAutomationRuleRepository();
 
   const pluginDatabase = createPluginDatabaseClient(pgPool && dbHealthy ? pgPool : null);
+  
+  const retryQueue = new RetryQueue();
+  const automationAuditRepository = new AutomationAuditRepository(
+    pgPool && dbHealthy ? pluginDatabase : undefined
+  );
 
   const automationEngine = new AutomationEngine(
     eventBus,
     pluginEngine,
     automationRuleRepository,
+    automationAuditRepository,
+    retryQueue,
     pluginDatabase
   );
 
@@ -54,6 +64,7 @@ export async function createServer(): Promise<FastifyInstance> {
     eventBus,
     pluginEngine,
     automationEngine,
+    automationAuditRepository,
     pluginDatabase,
     persistence: pgPool && dbHealthy ? "postgres" : "in-memory"
   };

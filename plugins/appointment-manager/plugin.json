@@ -10,5 +10,16 @@
   "permissions": ["contacts", "calendar", "automation"],
   "activationEvents": ["onStartup", "customer.created"],
   "backendEntry": "src/server/index.ts",
-  "frontendEntry": "src/ui/index.tsx"
+  "frontendEntry": "src/ui/index.tsx",
+  "ui": {
+    "slots": {
+      "dashboard-main": {
+        "displayName": "Appointments Overview",
+        "layout": "panel",
+        "componentRequired": true
+      }
+    },
+    "entry": "ui/dashboard-main.html",
+    "exposedComponents": ["dashboard-main"]
+  }
 }

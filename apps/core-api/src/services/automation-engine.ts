@@ -3,6 +3,8 @@ import type { EventEnvelope, PluginDatabaseClient } from "@bizforge/plugin-sdk";
 import { InMemoryEventBus } from "./event-bus";
 import { PluginEngine } from "./plugin-engine";
 import { createPluginPersistenceHelper } from "./plugin-persistence";
+import { RetryQueue } from "./retry-queue";
+import { AutomationAuditRepository } from "../repositories/automation-audit-repository";
 import {
   type AutomationRuleRepository,
   type AutomationAction,
@@ -44,6 +46,8 @@ export class AutomationEngine {
     private readonly eventBus: InMemoryEventBus,
     private readonly pluginEngine: PluginEngine,
     private readonly repository: AutomationRuleRepository,
+    private readonly auditRepository: AutomationAuditRepository,
+    private readonly retryQueue: RetryQueue,
     private readonly pluginDatabase?: PluginDatabaseClient
   ) {}
 
@@ -316,14 +320,41 @@ export class AutomationEngine {
     const rules = await this.repository.listEnabledByTrigger(event.eventType);
 
     for (const rule of rules) {
+      // Log execution audit entry
+      const auditResult = await this.auditRepository.logExecution(
+        rule.id,
+        rule.organizationId,
+        {
+          triggerEvent: event.eventType,
+          triggerEventId: event.eventId,
+          matched: false,
+          actionsTriggered: 0,
+          actionsExecuted: [],
+          errors: [],
+          status: "pending",
+          retryCount: 0
+        }
+      );
+      
+      const executionId = auditResult?.id;
+
       const matches = rule.conditions.every(
         (condition) =>
           (event.payload as Record<string, unknown>)[condition.field] === condition.equals
       );
+
       if (!matches) {
+        if (executionId) {
+          await this.auditRepository.updateExecutionStatus(
+            executionId,
+            rule.organizationId,
+            { status: "failed" }
+          );
+        }
         continue;
       }
 
+      let actionsPublished = 0;
       for (const action of rule.actions) {
         const plugin = this.pluginEngine.list().find((item) => item.manifest.name === action.plugin);
         if (!plugin || plugin.status !== "enabled") {
@@ -341,9 +372,21 @@ export class AutomationEngine {
             plugin: action.plugin,
             actionKey: action.actionKey,
             input: action.input,
-            triggerEventId: event.eventId
+            triggerEventId: event.eventId,
+            executionId
           }
         });
+        actionsPublished++;
+      }
+
+      if (executionId) {
+        await this.auditRepository.updateExecutionStatus(
+          executionId,
+          rule.organizationId,
+          { 
+            status: actionsPublished > 0 ? "success" : "failed"
+          }
+        );
       }
     }
   }
@@ -354,6 +397,7 @@ export class AutomationEngine {
       actionKey: string;
       input: Record<string, unknown>;
       triggerEventId: string;
+      executionId?: string;
     };
 
     const plugin = this.pluginEngine.list().find((item) => item.manifest.name === payload.plugin);
@@ -420,11 +464,54 @@ export class AutomationEngine {
         payload: {
           plugin: payload.plugin,
           actionKey: payload.actionKey,
-          triggerEventId: payload.triggerEventId
+          triggerEventId: payload.triggerEventId,
+          executionId: payload.executionId
         }
       });
-    } catch {
-      await this.publishActionFailure(event, "handler_execution_failed");
+
+      // Log successful execution
+      if (payload.executionId) {
+        await this.auditRepository.updateExecutionStatus(
+          payload.executionId,
+          event.organizationId,
+          { status: "success" }
+        );
+      }
+    } catch (error) {
+      const errorReason = error instanceof Error ? error.message : "handler_execution_failed";
+      
+      // Check if this should be retried
+      const retryEntry = this.retryQueue.get(event.eventId);
+      const attemptCount = retryEntry ? retryEntry.attemptCount : 0;
+      const maxAttempts = 3;
+
+      if (attemptCount < maxAttempts) {
+        // Re-enqueue for retry
+        this.retryQueue.enqueue(event, maxAttempts, async () => {
+          // This handler would re-process the action
+          await this.executeRequestedAction(event);
+        });
+
+        await this.publishActionFailure(event, `handler_execution_failed_retry_${attemptCount + 1}`);
+      } else {
+        // Max retries exceeded, add to dead letter queue
+        await this.auditRepository.addToDeadLetterDirect({
+          organizationId: event.organizationId,
+          originalEvent: event,
+          failureReason: errorReason,
+          retryAttempts: maxAttempts
+        });
+
+        if (payload.executionId) {
+          await this.auditRepository.updateExecutionStatus(
+            payload.executionId,
+            event.organizationId,
+            { status: "failed", lastError: errorReason }
+          );
+        }
+
+        await this.publishActionFailure(event, "handler_execution_failed_max_retries");
+      }
     }
   }
 

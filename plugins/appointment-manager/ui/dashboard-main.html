@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Appointment Manager</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", "Arial", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        padding: 16px;
+        background: linear-gradient(160deg, #f5fbff 0%, #e7f3ff 100%);
+        color: #0f172a;
+      }
+
+      .card {
+        border: 1px solid #cfe3ff;
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 14px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: #334155;
+      }
+
+      .metrics {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .metric {
+        border: 1px solid #dbeafe;
+        border-radius: 10px;
+        padding: 8px;
+        background: #f8fbff;
+      }
+
+      .metric h4 {
+        margin: 0;
+        font-size: 11px;
+        color: #334155;
+        font-weight: 600;
+      }
+
+      .metric p {
+        margin: 6px 0 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .badge {
+        margin-top: 12px;
+        display: inline-block;
+        border-radius: 999px;
+        background: #dbeafe;
+        color: #1d4ed8;
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="card">
+      <h1 class="title">Appointment Manager</h1>
+      <p class="subtitle" id="orgLabel">Organization context pending...</p>
+      <section class="metrics">
+        <div class="metric">
+          <h4>Scheduled Today</h4>
+          <p>12</p>
+        </div>
+        <div class="metric">
+          <h4>Pending Confirmations</h4>
+          <p>4</p>
+        </div>
+        <div class="metric">
+          <h4>Follow-ups Queued</h4>
+          <p>7</p>
+        </div>
+      </section>
+      <span class="badge">Phase 2 Plugin Workspace MVP</span>
+    </article>
+
+    <script>
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (!data || data.type !== "plugin_context") {
+          return;
+        }
+
+        const orgLabel = document.getElementById("orgLabel");
+        if (!orgLabel) {
+          return;
+        }
+
+        orgLabel.textContent = `Organization: ${String(data.organizationId ?? "unknown")}`;
+      });
+    </script>
+  </body>
+</html>

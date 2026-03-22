@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { AutomationEngine } from "./automation-engine";
 import { InMemoryEventBus } from "./event-bus";
+import { RetryQueue } from "./retry-queue";
+import { AutomationAuditRepository } from "../repositories/automation-audit-repository";
 import {
   InMemoryAutomationRuleRepository,
   type AutomationRuleRepository
@@ -75,7 +77,9 @@ function createEngine(pluginEngine: PluginEngine): {
 } {
   const eventBus = new InMemoryEventBus();
   const repository = new InMemoryAutomationRuleRepository();
-  const engine = new AutomationEngine(eventBus, pluginEngine, repository);
+  const auditRepository = new AutomationAuditRepository(undefined);
+  const retryQueue = new RetryQueue();
+  const engine = new AutomationEngine(eventBus, pluginEngine, repository, auditRepository, retryQueue);
   engine.initialize();
 
   return { engine, eventBus, repository };

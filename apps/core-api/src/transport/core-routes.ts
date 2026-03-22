@@ -549,4 +549,77 @@ export async function registerCoreRoutes(
 
     return result;
   });
+
+  server.get("/api/automation/rules/:id/executions", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    
+    if (!runtime.automationAuditRepository) {
+      return reply.code(501).send({ error: "Audit repository not available" });
+    }
+
+    const executions = await runtime.automationAuditRepository.listRecentExecutions(
+      params.id,
+      headers["x-bizforge-org-id"],
+      50
+    );
+
+    return { ruleId: params.id, executions };
+  });
+
+  server.get("/api/automation/dead-letters", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const headers = parsedHeaders.data;
+    
+    if (!runtime.automationAuditRepository) {
+      return reply.code(501).send({ error: "Audit repository not available" });
+    }
+
+    const deadLetters = await runtime.automationAuditRepository.listDeadLetters(
+      headers["x-bizforge-org-id"],
+      100
+    );
+
+    return { organizationId: headers["x-bizforge-org-id"], deadLetters };
+  });
+
+  server.post("/api/automation/dead-letters/:id/acknowledge", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = z.object({ id: z.string().min(1) }).safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid dead-letter id" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+
+    if (!runtime.automationAuditRepository) {
+      return reply.code(501).send({ error: "Audit repository not available" });
+    }
+
+    await runtime.automationAuditRepository.removeFromDeadLetter(
+      params.id,
+      headers["x-bizforge-org-id"]
+    );
+
+    return { status: "acknowledged", deadLetterId: params.id };
+  });
 }

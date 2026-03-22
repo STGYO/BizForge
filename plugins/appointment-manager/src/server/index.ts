@@ -612,6 +612,20 @@ const scheduleFollowUp: PluginHandler = async ({ actionInput }, context) => {
 
 export const pluginRegistration: PluginRegistration = {
   manifest: typedManifest,
+  uiComponents: {
+    pluginName: typedManifest.name,
+    componentNames: ["dashboard-main"],
+    slots: [
+      {
+        pluginName: typedManifest.name,
+        slotName: "dashboard-main",
+        displayName: "Appointments Overview",
+        layout: "panel",
+        componentRequired: true
+      }
+    ],
+    componentUrl: `/api/plugins/${typedManifest.name}/ui/dashboard-main.html`
+  },
   handlers: {
     listAppointments,
     createAppointment,
