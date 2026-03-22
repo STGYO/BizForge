@@ -4,35 +4,44 @@ import { PluginLifecycleService } from "./plugin-lifecycle-service";
 import type { AutomationRuleRecord } from "../repositories/automation-rule-repository";
 
 function createServiceStub(options?: {
-  pluginNames?: string[];
+  plugins?: Array<{
+    name: string;
+    status?: "enabled" | "disabled";
+    core?: boolean;
+    dependsOn?: string[];
+  }>;
   rules?: AutomationRuleRecord[];
 }) {
   const enabled: string[] = [];
   const disabled: string[] = [];
 
-  const pluginNames = options?.pluginNames ?? ["appointment-manager"];
+  const plugins = options?.plugins ?? [{ name: "appointment-manager" }];
   const rules = options?.rules ?? [];
 
   const service = new PluginLifecycleService({
     pluginEngine: {
       list: () =>
-        pluginNames.map((name) => ({
+        plugins.map((plugin) => ({
           manifest: {
-            name,
+            name: plugin.name,
             version: "1.0.0",
             author: "BizForge",
+            core: plugin.core ?? false,
+            dependsOn: plugin.dependsOn ?? [],
             permissions: [],
             activationEvents: [],
             backendEntry: "dist/server/index.js",
             frontendEntry: "dist/ui/index.js"
           },
-          status: "enabled" as const,
-          rootPath: `plugins/${name}`,
+          status: plugin.status ?? ("enabled" as const),
+          rootPath: `plugins/${plugin.name}`,
           registration: {
             manifest: {
-              name,
+              name: plugin.name,
               version: "1.0.0",
               author: "BizForge",
+              core: plugin.core ?? false,
+              dependsOn: plugin.dependsOn ?? [],
               permissions: [],
               activationEvents: [],
               backendEntry: "dist/server/index.js",
@@ -65,7 +74,7 @@ function createServiceStub(options?: {
 }
 
 test("installPlugin returns not found when plugin is missing", async () => {
-  const { service, enabled } = createServiceStub({ pluginNames: [] });
+  const { service, enabled } = createServiceStub({ plugins: [] });
 
   const result = await service.installPlugin("missing-plugin");
 
@@ -125,4 +134,83 @@ test("uninstallPlugin disables plugin when no active references exist", async ()
     assert.equal(result.plugin, "appointment-manager");
   }
   assert.deepEqual(disabled, ["appointment-manager"]);
+});
+
+test("installPlugin blocks when plugin dependency is missing", async () => {
+  const { service, enabled } = createServiceStub({
+    plugins: [
+      {
+        name: "messaging-notifications",
+        dependsOn: ["customer-crm"]
+      }
+    ]
+  });
+
+  const result = await service.installPlugin("messaging-notifications", "org-1");
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "plugin_dependency_missing");
+    assert.match(result.error.message, /customer-crm/i);
+  }
+  assert.deepEqual(enabled, []);
+});
+
+test("disablePlugin blocks when active dependents exist", async () => {
+  const { service, disabled } = createServiceStub({
+    plugins: [
+      { name: "customer-crm", status: "enabled" },
+      { name: "leads-manager", status: "enabled", dependsOn: ["customer-crm"] }
+    ]
+  });
+
+  const result = await service.disablePlugin("customer-crm");
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "plugin_dependency_conflict");
+  }
+  assert.deepEqual(disabled, []);
+});
+
+test("disablePlugin allows force override when dependents exist", async () => {
+  const { service, disabled } = createServiceStub({
+    plugins: [
+      { name: "customer-crm", status: "enabled" },
+      { name: "leads-manager", status: "enabled", dependsOn: ["customer-crm"] }
+    ]
+  });
+
+  const result = await service.disablePlugin("customer-crm", { force: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(disabled, ["customer-crm"]);
+});
+
+test("uninstallPlugin blocks core plugin without force", async () => {
+  const { service } = createServiceStub({
+    plugins: [{ name: "customer-crm", core: true }],
+    rules: []
+  });
+
+  const result = await service.uninstallPlugin("customer-crm", "org-1");
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "plugin_core_protected");
+  }
+});
+
+test("uninstallPlugin allows core plugin force override", async () => {
+  const { service, disabled } = createServiceStub({
+    plugins: [{ name: "customer-crm", core: true }],
+    rules: []
+  });
+
+  const result = await service.uninstallPlugin("customer-crm", "org-1", {
+    force: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(disabled, ["customer-crm"]);
 });

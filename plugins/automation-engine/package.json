@@ -1,0 +1,17 @@
+﻿{
+  "name": "@bizforge/plugin-automation-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "echo \"No tests configured for automation-engine\"",
+    "test:watch": "echo \"No watch tests configured for automation-engine\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"No lint configured for automation-engine\""
+  },
+  "dependencies": {
+    "@bizforge/plugin-sdk": "file:../../packages/plugin-sdk"
+  }
+}

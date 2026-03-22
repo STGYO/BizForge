@@ -1,0 +1,14 @@
+﻿{
+  "name": "task-workflow-manager",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Task assignment, workflow execution, and operational deadline tracking.",
+  "core": true,
+  "preinstalled": true,
+  "category": "core",
+  "dependsOn": ["customer-crm"],
+  "permissions": ["analytics", "automation"],
+  "activationEvents": ["onStartup"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}

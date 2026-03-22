@@ -1,0 +1,14 @@
+﻿{
+  "name": "leads-manager",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Lead capture, qualification pipeline, and conversion workflows.",
+  "core": true,
+  "preinstalled": true,
+  "category": "core",
+  "dependsOn": ["customer-crm"],
+  "permissions": ["contacts", "analytics", "automation"],
+  "activationEvents": ["onStartup"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}

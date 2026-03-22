@@ -69,8 +69,8 @@ export async function createServer(): Promise<FastifyInstance> {
     await migrationRunner.run();
   }
 
-  await registerCoreRoutes(server, runtime);
   await pluginEngine.loadInstalledPlugins();
+  await registerCoreRoutes(server, runtime);
   const loadReport = pluginEngine.getLoadReport();
   server.log.info(
     {

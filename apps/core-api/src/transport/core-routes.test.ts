@@ -102,30 +102,40 @@ function createRuntimeStub(): BizForgeRuntime {
 }
 
 function createRuntimeStubWithRules(
-  rules: Array<{ actions: Array<{ plugin: string }> }>
+  rules: Array<{ actions: Array<{ plugin: string }> }>,
+  plugins: Array<{
+    name: string;
+    core?: boolean;
+    dependsOn?: string[];
+    status?: "enabled" | "disabled";
+  }> = [{ name: "appointment-manager" }]
 ): BizForgeRuntime {
   return {
     persistence: "in-memory",
     eventBus: {} as BizForgeRuntime["eventBus"],
     pluginEngine: {
-      list: () => [
-        {
+      list: () =>
+        plugins.map((plugin) => ({
           manifest: {
-            name: "appointment-manager",
+            name: plugin.name,
             version: "1.0.0",
             author: "BizForge",
+            core: plugin.core,
+            dependsOn: plugin.dependsOn,
             permissions: ["automation"],
             activationEvents: ["onStartup"],
             backendEntry: "dist/server/index.js",
             frontendEntry: "dist/ui/index.js"
           },
-          status: "enabled",
-          rootPath: "plugins/appointment-manager",
+          status: plugin.status ?? "enabled",
+          rootPath: `plugins/${plugin.name}`,
           registration: {
             manifest: {
-              name: "appointment-manager",
+              name: plugin.name,
               version: "1.0.0",
               author: "BizForge",
+              core: plugin.core,
+              dependsOn: plugin.dependsOn,
               permissions: ["automation"],
               activationEvents: ["onStartup"],
               backendEntry: "dist/server/index.js",
@@ -135,8 +145,7 @@ function createRuntimeStubWithRules(
             triggers: [],
             actions: []
           }
-        }
-      ],
+        })),
       disable: () => true,
       enable: () => true,
       getLoadReport: () => ({
@@ -443,6 +452,89 @@ test("returns not found when uninstalling unknown plugin", async () => {
   const body = response.json() as { error: string; code: string };
   assert.match(body.error, /plugin not found/i);
   assert.equal(body.code, "plugin_not_found");
+
+  await app.close();
+});
+
+test("blocks uninstall for core plugin without force override", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(
+    app,
+    createRuntimeStubWithRules([], [{ name: "customer-crm", core: true }])
+  );
+
+  await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/customer-crm/install",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/customer-crm/uninstall",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 409);
+  const body = response.json() as { code: string };
+  assert.equal(body.code, "plugin_core_protected");
+
+  await app.close();
+});
+
+test("allows force uninstall for core plugin", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(
+    app,
+    createRuntimeStubWithRules([], [{ name: "customer-crm", core: true }])
+  );
+
+  await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/customer-crm/install",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/customer-crm/uninstall?force=true",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json() as { status: string; plugin: string };
+  assert.equal(body.status, "uninstalled");
+  assert.equal(body.plugin, "customer-crm");
+
+  await app.close();
+});
+
+test("blocks disable when plugin has enabled dependents", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(
+    app,
+    createRuntimeStubWithRules([], [
+      { name: "customer-crm", core: true },
+      { name: "leads-manager", dependsOn: ["customer-crm"], status: "enabled" }
+    ])
+  );
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/plugins/customer-crm/disable"
+  });
+
+  assert.equal(response.statusCode, 409);
+  const body = response.json() as { code: string };
+  assert.equal(body.code, "plugin_dependency_conflict");
 
   await app.close();
 });

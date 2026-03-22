@@ -12,6 +12,10 @@ export interface PluginManifest {
   version: string;
   author: string;
   description?: string;
+  core?: boolean;
+  preinstalled?: boolean;
+  category?: "core" | "operations" | "extension";
+  dependsOn?: string[];
   permissions: PluginPermission[];
   activationEvents: string[];
   backendEntry: string;

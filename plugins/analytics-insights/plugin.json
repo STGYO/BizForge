@@ -1,0 +1,14 @@
+﻿{
+  "name": "analytics-insights",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Business metrics, conversion funnels, and operational dashboards.",
+  "core": true,
+  "preinstalled": true,
+  "category": "core",
+  "dependsOn": ["customer-crm", "leads-manager", "invoice-billing", "messaging-notifications"],
+  "permissions": ["analytics", "automation"],
+  "activationEvents": ["onStartup"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}

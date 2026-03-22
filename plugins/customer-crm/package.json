@@ -1,0 +1,17 @@
+﻿{
+  "name": "@bizforge/plugin-customer-crm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "echo \"No tests configured for customer-crm\"",
+    "test:watch": "echo \"No watch tests configured for customer-crm\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"No lint configured for customer-crm\""
+  },
+  "dependencies": {
+    "@bizforge/plugin-sdk": "file:../../packages/plugin-sdk"
+  }
+}

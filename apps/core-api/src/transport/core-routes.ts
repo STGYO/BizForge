@@ -3,10 +3,19 @@ import { z } from "zod";
 import type { BizForgeRuntime } from "../server";
 import { PluginLifecycleService } from "../services/plugin-lifecycle-service";
 import { MarketplaceService } from "../services/marketplace-service";
-import { InMemoryPluginInstallRepository } from "../repositories/plugin-install-repository";
+import {
+  InMemoryPluginInstallRepository,
+  PostgresPluginInstallRepository
+} from "../repositories/plugin-install-repository";
+import { PluginBootstrapService } from "../services/plugin-bootstrap-service";
+import { getPgPool } from "../db/postgres";
 
 const orgHeaderSchema = z.object({
   "x-bizforge-org-id": z.string().min(1)
+});
+
+const lifecycleQuerySchema = z.object({
+  force: z.union([z.literal("true"), z.literal("1")]).optional()
 });
 
 const automationRuleIdParamsSchema = z.object({
@@ -66,16 +75,32 @@ export async function registerCoreRoutes(
   runtime: BizForgeRuntime
 ): Promise<void> {
   runtime.automationEngine.initialize();
-  const pluginInstallRepository = new InMemoryPluginInstallRepository();
+  const pgPool = runtime.persistence === "postgres" ? getPgPool() : null;
+  const pluginInstallRepository =
+    pgPool && runtime.persistence === "postgres"
+      ? new PostgresPluginInstallRepository(pgPool)
+      : new InMemoryPluginInstallRepository();
   const pluginLifecycleService = new PluginLifecycleService({
     pluginEngine: runtime.pluginEngine,
     automationEngine: runtime.automationEngine,
     pluginInstallRepository
   });
+  const pluginBootstrapService = new PluginBootstrapService({
+    pluginEngine: runtime.pluginEngine,
+    pluginLifecycleService
+  });
   const marketplaceService = new MarketplaceService({
     pluginEngine: runtime.pluginEngine,
     pluginInstallRepository
   });
+
+  const defaultOrganizationId = process.env.BIZFORGE_DEFAULT_ORG_ID ?? "org-1";
+  if (runtime.persistence === "in-memory") {
+    const bootstrapReport = await pluginBootstrapService.ensurePreinstalledPlugins(
+      defaultOrganizationId
+    );
+    server.log.info({ bootstrapReport }, "Preinstalled core plugins for in-memory runtime");
+  }
 
   server.get("/health", async () => ({
     status: "ok",
@@ -98,9 +123,24 @@ export async function registerCoreRoutes(
       return reply.code(400).send({ error: "Invalid plugin name" });
     }
 
+    const parsedQuery = lifecycleQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.code(400).send({ error: "Invalid lifecycle query options" });
+    }
+
     const params = parsedParams.data;
-    const changed = runtime.pluginEngine.disable(params.name);
-    return changed ? { status: "disabled" } : reply.code(404).send({ error: "Plugin not found" });
+    const outcome = await pluginLifecycleService.disablePlugin(params.name, {
+      force: Boolean(parsedQuery.data.force)
+    });
+
+    if (!outcome.ok) {
+      return reply.code(outcome.error.httpStatus).send({
+        error: outcome.error.message,
+        code: outcome.error.code
+      });
+    }
+
+    return { status: "disabled", plugin: params.name };
   });
 
   server.post("/api/plugins/:name/enable", async (request, reply) => {
@@ -142,6 +182,17 @@ export async function registerCoreRoutes(
     }
 
     const headers = parsedHeaders.data;
+    const bootstrapReport = await pluginBootstrapService.ensurePreinstalledPlugins(
+      headers["x-bizforge-org-id"]
+    );
+
+    if (bootstrapReport.failed.length > 0) {
+      server.log.warn(
+        { bootstrapReport, organizationId: headers["x-bizforge-org-id"] },
+        "Unable to fully bootstrap preinstalled plugins"
+      );
+    }
+
     return await marketplaceService.listCatalog(headers["x-bizforge-org-id"]);
   });
 
@@ -187,11 +238,19 @@ export async function registerCoreRoutes(
       return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
     }
 
+    const parsedQuery = lifecycleQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.code(400).send({ error: "Invalid lifecycle query options" });
+    }
+
     const params = parsedParams.data;
     const headers = parsedHeaders.data;
     const outcome = await pluginLifecycleService.uninstallPlugin(
       params.name,
-      headers["x-bizforge-org-id"]
+      headers["x-bizforge-org-id"],
+      {
+        force: Boolean(parsedQuery.data.force)
+      }
     );
 
     if (!outcome.ok) {
@@ -218,11 +277,19 @@ export async function registerCoreRoutes(
       return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
     }
 
+    const parsedQuery = lifecycleQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.code(400).send({ error: "Invalid lifecycle query options" });
+    }
+
     const params = parsedParams.data;
     const headers = parsedHeaders.data;
     const outcome = await pluginLifecycleService.uninstallPlugin(
       params.name,
-      headers["x-bizforge-org-id"]
+      headers["x-bizforge-org-id"],
+      {
+        force: Boolean(parsedQuery.data.force)
+      }
     );
 
     if (!outcome.ok) {

@@ -7,7 +7,20 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function AutomationsPage() {
+interface AutomationsPageProps {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function AutomationsPage({ searchParams }: AutomationsPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const initialEditIdRaw = resolvedSearchParams?.edit;
+  const initialEditId =
+    typeof initialEditIdRaw === "string"
+      ? initialEditIdRaw
+      : Array.isArray(initialEditIdRaw)
+        ? initialEditIdRaw[0]
+        : undefined;
+
   const [catalogResult, rulesResult] = await Promise.allSettled([
     fetchAutomationCatalog(),
     fetchAutomationRules(DEFAULT_ORG_ID)
@@ -50,7 +63,11 @@ export default async function AutomationsPage() {
           </section>
         ) : null}
 
-        <AutomationConsole initialRules={rules} catalog={catalog} />
+        <AutomationConsole
+          initialRules={rules}
+          catalog={catalog}
+          {...(initialEditId ? { initialEditId } : {})}
+        />
       </div>
     </div>
   );

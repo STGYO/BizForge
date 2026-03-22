@@ -1,0 +1,14 @@
+﻿{
+  "name": "customer-crm",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Customer database, segmentation, interaction history, and profile management.",
+  "core": true,
+  "preinstalled": true,
+  "category": "core",
+  "dependsOn": [],
+  "permissions": ["contacts", "documents", "automation"],
+  "activationEvents": ["onStartup"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}

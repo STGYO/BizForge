@@ -1,0 +1,20 @@
+{
+  "name": "@bizforge/plugin-messaging-notifications",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "tsx --test src/**/*.test.ts",
+    "test:watch": "tsx --watch --test src/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"No lint configured for messaging-notifications\""
+  },
+  "dependencies": {
+    "@bizforge/plugin-sdk": "file:../../packages/plugin-sdk"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AutomationRuleBuilder,
   createDraftFromPayload,
@@ -18,13 +18,21 @@ import {
   simulateAutomationRule,
   updateAutomationRule
 } from "../lib/automation-api";
+import {
+  createEmptyValidationResult,
+  hasValidationErrors,
+  listValidationMessages,
+  validateRuleDraft,
+  type RuleDraftValidation
+} from "./automation-rule-validation";
 
 interface AutomationConsoleProps {
   initialRules: AutomationRule[];
   catalog: AutomationCatalog;
+  initialEditId?: string;
 }
 
-export function AutomationConsole({ initialRules, catalog }: AutomationConsoleProps) {
+export function AutomationConsole({ initialRules, catalog, initialEditId }: AutomationConsoleProps) {
   const [rules, setRules] = useState<AutomationRule[]>(initialRules);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +40,52 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [draft, setDraft] = useState<RuleDraft>(() => createEmptyDraft(catalog));
+  const [validation, setValidation] = useState<RuleDraftValidation>(createEmptyValidationResult);
+  const [showValidation, setShowValidation] = useState(false);
+  const [queryHydrated, setQueryHydrated] = useState(false);
+
+  function syncEditQuery(ruleId?: string): void {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (ruleId) {
+      url.searchParams.set("edit", ruleId);
+    } else {
+      url.searchParams.delete("edit");
+    }
+
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function handleDraftChange(nextDraft: RuleDraft): void {
+    setDraft(nextDraft);
+    if (showValidation) {
+      setValidation(validateRuleDraft(nextDraft, catalog));
+    }
+  }
+
+  useEffect(() => {
+    if (!initialEditId || queryHydrated) {
+      return;
+    }
+
+    setQueryHydrated(true);
+    void beginEditRule(initialEditId, true);
+  }, [initialEditId, queryHydrated]);
 
   async function handleCreateRule(): Promise<void> {
     setError(null);
     setSimulationMessage(null);
+
+    const nextValidation = validateRuleDraft(draft, catalog);
+    setValidation(nextValidation);
+    setShowValidation(true);
+    if (hasValidationErrors(nextValidation)) {
+      setError("Please fix validation errors before creating the rule.");
+      return;
+    }
 
     const payload = serializeDraft(draft);
     if (!payload.triggerEvent || payload.actions.length === 0) {
@@ -49,6 +99,9 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
 
       setRules((current) => [created, ...current]);
       setDraft(createEmptyDraft(catalog));
+      setValidation(createEmptyValidationResult());
+      setShowValidation(false);
+      syncEditQuery();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create rule");
     } finally {
@@ -56,7 +109,7 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
     }
   }
 
-  async function beginEditRule(ruleId: string): Promise<void> {
+  async function beginEditRule(ruleId: string, fromQuery = false): Promise<void> {
     setError(null);
     setSimulationMessage(null);
     setSubmitting(true);
@@ -76,8 +129,16 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
       );
       setEditingRuleId(rule.id);
       setEditorMode("edit");
+      setValidation(createEmptyValidationResult());
+      setShowValidation(false);
+      syncEditQuery(rule.id);
     } catch (hydrateError) {
       setError(hydrateError instanceof Error ? hydrateError.message : "Failed to load rule for editing");
+      if (fromQuery) {
+        setEditorMode("create");
+        setEditingRuleId(null);
+      }
+      syncEditQuery();
     } finally {
       setSubmitting(false);
     }
@@ -90,6 +151,15 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
 
     setError(null);
     setSimulationMessage(null);
+
+    const nextValidation = validateRuleDraft(draft, catalog);
+    setValidation(nextValidation);
+    setShowValidation(true);
+    if (hasValidationErrors(nextValidation)) {
+      setError("Please fix validation errors before saving changes.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -98,6 +168,9 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
       setEditorMode("create");
       setEditingRuleId(null);
       setDraft(createEmptyDraft(catalog));
+      setValidation(createEmptyValidationResult());
+      setShowValidation(false);
+      syncEditQuery();
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Failed to update rule");
     } finally {
@@ -109,8 +182,11 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
     setEditorMode("create");
     setEditingRuleId(null);
     setDraft(createEmptyDraft(catalog));
+    setValidation(createEmptyValidationResult());
+    setShowValidation(false);
     setError(null);
     setSimulationMessage(null);
+    syncEditQuery();
   }
 
   async function handleToggleEnabled(rule: AutomationRule): Promise<void> {
@@ -132,6 +208,9 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
     try {
       await deleteAutomationRule(rule.id);
       setRules((current) => current.filter((item) => item.id !== rule.id));
+      if (editingRuleId === rule.id) {
+        cancelEdit();
+      }
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete rule");
     }
@@ -176,8 +255,24 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
         </p>
 
         <div className="mt-4">
-          <AutomationRuleBuilder catalog={catalog} draft={draft} onChange={setDraft} />
+          <AutomationRuleBuilder
+            catalog={catalog}
+            draft={draft}
+            onChange={handleDraftChange}
+            validationErrors={showValidation ? validation.fieldErrors : {}}
+          />
         </div>
+
+        {showValidation && hasValidationErrors(validation) ? (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <p className="font-semibold">Please resolve the following issues:</p>
+            <ul className="mt-2 list-disc pl-5">
+              {listValidationMessages(validation).map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button

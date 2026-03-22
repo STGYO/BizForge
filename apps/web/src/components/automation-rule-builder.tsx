@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import type {
   AutomationAction,
   AutomationCatalog,
@@ -33,6 +33,7 @@ interface AutomationRuleBuilderProps {
   draft: RuleDraft;
   onChange: (next: RuleDraft) => void;
   compact?: boolean;
+  validationErrors?: Record<string, string[]>;
 }
 
 interface JsonSchema {
@@ -164,21 +165,39 @@ function FieldLabel({ label, required }: { label: string; required: boolean }) {
   );
 }
 
-function SchemaFieldRenderer({
+function ValidationMessage({ message }: { message: string }) {
+  return <p className="mt-1 text-xs text-red-700">{message}</p>;
+}
+
+function firstError(errors: Record<string, string[]>, path: string): string | null {
+  const messages = errors[path];
+  if (!messages || messages.length === 0) {
+    return null;
+  }
+
+  return messages[0] ?? null;
+}
+
+export function SchemaFieldRenderer({
   schema,
   label,
   value,
   onChange,
-  required
+  required,
+  path,
+  validationErrors
 }: {
   schema: JsonSchema;
   label: string;
   value: unknown;
   onChange: (next: unknown) => void;
   required: boolean;
+  path: string;
+  validationErrors: Record<string, string[]>;
 }) {
   const normalized = normalizeSchema(schema);
   const primaryType = inferPrimaryType(normalized);
+  const message = firstError(validationErrors, path);
 
   if (normalized.enum && normalized.enum.length > 0) {
     const selectedIndex = normalized.enum.findIndex((entry) => entry === value);
@@ -201,6 +220,7 @@ function SchemaFieldRenderer({
             </option>
           ))}
         </select>
+        {message ? <ValidationMessage message={message} /> : null}
       </div>
     );
   }
@@ -214,6 +234,7 @@ function SchemaFieldRenderer({
     return (
       <div className="space-y-2 rounded-lg border border-black/10 bg-black/[0.02] p-3">
         <FieldLabel label={label} required={required} />
+        {message ? <ValidationMessage message={message} /> : null}
         {Object.entries(normalized.properties ?? {}).map(([key, propertySchema]) => {
           const childSchema = propertySchema as JsonSchema;
           const childRequired = (normalized.required ?? []).includes(key);
@@ -226,6 +247,8 @@ function SchemaFieldRenderer({
               label={key}
               required={childRequired}
               value={childValue}
+              path={`${path}.${key}`}
+              validationErrors={validationErrors}
               onChange={(nextChildValue) => {
                 onChange(updateObjectValue(objectValue, key, nextChildValue));
               }}
@@ -254,6 +277,7 @@ function SchemaFieldRenderer({
             Add Item
           </button>
         </div>
+        {message ? <ValidationMessage message={message} /> : null}
 
         {arrayValue.length === 0 ? (
           <p className="text-xs text-black/55">No items</p>
@@ -278,6 +302,8 @@ function SchemaFieldRenderer({
                   label={`${label}[${index}]`}
                   required={required}
                   value={entry}
+                  path={`${path}.${index}`}
+                  validationErrors={validationErrors}
                   onChange={(nextEntry) => {
                     const next = arrayValue.map((currentEntry, arrayIndex) =>
                       arrayIndex === index ? nextEntry : currentEntry
@@ -295,14 +321,17 @@ function SchemaFieldRenderer({
 
   if (primaryType === "boolean") {
     return (
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        {label}
-      </label>
+      <div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) => onChange(event.target.checked)}
+          />
+          {label}
+        </label>
+        {message ? <ValidationMessage message={message} /> : null}
+      </div>
     );
   }
 
@@ -319,6 +348,7 @@ function SchemaFieldRenderer({
             onChange(Number.isFinite(nextValue) ? nextValue : 0);
           }}
         />
+        {message ? <ValidationMessage message={message} /> : null}
       </label>
     );
   }
@@ -332,6 +362,7 @@ function SchemaFieldRenderer({
         value={typeof value === "string" ? value : String(value ?? "")}
         onChange={(event) => onChange(event.target.value)}
       />
+      {message ? <ValidationMessage message={message} /> : null}
     </label>
   );
 }
@@ -427,7 +458,8 @@ export function AutomationRuleBuilder({
   catalog,
   draft,
   onChange,
-  compact = false
+  compact = false,
+  validationErrors = {}
 }: AutomationRuleBuilderProps) {
   const triggerFieldOptions = useMemo(
     () => CORE_TRIGGER_FIELDS[draft.triggerEvent] ?? ["source"],
@@ -467,6 +499,9 @@ export function AutomationRuleBuilder({
                 </option>
               ))}
             </select>
+            {firstError(validationErrors, "triggerEvent") ? (
+              <ValidationMessage message={firstError(validationErrors, "triggerEvent") ?? ""} />
+            ) : null}
           </label>
 
           <label className="flex items-end gap-2 text-sm">
@@ -505,7 +540,7 @@ export function AutomationRuleBuilder({
         </div>
 
         <div className="space-y-3">
-          {draft.conditions.map((condition) => (
+          {draft.conditions.map((condition, conditionIndex) => (
             <div key={condition.id} className="rounded-lg border border-black/10 bg-surface/40 p-3">
               <div className={`grid gap-2 ${compact ? "grid-cols-1" : "md:grid-cols-[1fr_1fr_auto]"}`}>
                 <label className="text-sm">
@@ -533,6 +568,11 @@ export function AutomationRuleBuilder({
                       </option>
                     ))}
                   </select>
+                  {firstError(validationErrors, `conditions.${conditionIndex}.field`) ? (
+                    <ValidationMessage
+                      message={firstError(validationErrors, `conditions.${conditionIndex}.field`) ?? ""}
+                    />
+                  ) : null}
                 </label>
 
                 <label className="text-sm">
@@ -554,6 +594,11 @@ export function AutomationRuleBuilder({
                       });
                     }}
                   />
+                  {firstError(validationErrors, `conditions.${conditionIndex}.equals`) ? (
+                    <ValidationMessage
+                      message={firstError(validationErrors, `conditions.${conditionIndex}.equals`) ?? ""}
+                    />
+                  ) : null}
                 </label>
 
                 <button
@@ -611,7 +656,7 @@ export function AutomationRuleBuilder({
         </div>
 
         <div className="space-y-3">
-          {draft.actions.map((action) => {
+          {draft.actions.map((action, actionIndex) => {
             const selectedDefinition =
               catalog.actions.find(
                 (entry) => entry.plugin === action.plugin && entry.key === action.actionKey
@@ -666,6 +711,11 @@ export function AutomationRuleBuilder({
                         </option>
                       ))}
                     </select>
+                    {firstError(validationErrors, `actions.${actionIndex}.actionKey`) ? (
+                      <ValidationMessage
+                        message={firstError(validationErrors, `actions.${actionIndex}.actionKey`) ?? ""}
+                      />
+                    ) : null}
                   </label>
 
                   <button
@@ -688,6 +738,8 @@ export function AutomationRuleBuilder({
                     label="Action Input"
                     required={true}
                     value={action.input}
+                    path={`actions.${actionIndex}.input`}
+                    validationErrors={validationErrors}
                     onChange={(nextValue) => {
                       onChange({
                         ...draft,

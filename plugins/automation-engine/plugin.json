@@ -1,0 +1,14 @@
+﻿{
+  "name": "automation-engine",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Automation observability, execution history, and control plane extensions.",
+  "core": true,
+  "preinstalled": true,
+  "category": "core",
+  "dependsOn": ["customer-crm"],
+  "permissions": ["automation", "analytics"],
+  "activationEvents": ["onStartup"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}

@@ -1,0 +1,14 @@
+﻿{
+  "name": "document-manager",
+  "version": "1.0.0",
+  "author": "BizForge",
+  "description": "Document storage, linkage, versioning, and controlled sharing.",
+  "core": true,
+  "preinstalled": true,
+  "category": "core",
+  "dependsOn": ["customer-crm"],
+  "permissions": ["documents", "contacts", "automation"],
+  "activationEvents": ["onStartup"],
+  "backendEntry": "src/server/index.ts",
+  "frontendEntry": "src/ui/index.tsx"
+}

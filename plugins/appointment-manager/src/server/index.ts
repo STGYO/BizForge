@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   PluginManifest,
   PluginPermission,
   PluginRegistration,
@@ -6,10 +6,10 @@ import type {
 } from "@bizforge/plugin-sdk";
 import manifest from "../../plugin.json" assert { type: "json" };
 
-const typedManifest: PluginManifest = {
+const typedManifest = {
   ...manifest,
   permissions: manifest.permissions as PluginPermission[]
-};
+} as PluginManifest;
 
 const listAppointments: PluginHandler = async () => {
   return {
@@ -104,3 +104,7 @@ export const appointmentManagerPlugin: PluginRegistration = {
     }
   ]
 };
+
+
+
+
