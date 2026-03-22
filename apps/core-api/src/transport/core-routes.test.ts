@@ -5,6 +5,30 @@ import { registerCoreRoutes } from "./core-routes";
 import type { BizForgeRuntime } from "../server";
 
 function createRuntimeStub(): BizForgeRuntime {
+  const rulesById = new Map<string, {
+    id: string;
+    organizationId: string;
+    triggerEvent: string;
+    conditions: Array<{ field: string; equals: unknown }>;
+    actions: Array<{ plugin: string; actionKey: string; input: Record<string, unknown> }>;
+    enabled: boolean;
+  }>();
+
+  rulesById.set("rule-1", {
+    id: "rule-1",
+    organizationId: "org-1",
+    triggerEvent: "lead.generated",
+    conditions: [{ field: "source", equals: "web" }],
+    actions: [
+      {
+        plugin: "appointment-manager",
+        actionKey: "schedule_follow_up",
+        input: { customerId: "cust-1", offsetHours: 24 }
+      }
+    ],
+    enabled: true
+  });
+
   return {
     persistence: "in-memory",
     eventBus: {} as BizForgeRuntime["eventBus"],
@@ -23,8 +47,55 @@ function createRuntimeStub(): BizForgeRuntime {
       initialize: () => {},
       listRules: async () => [],
       listCatalog: () => ({ triggers: [], actions: [] }),
+      getRule: async (ruleId: string, organizationId: string) => {
+        const rule = rulesById.get(ruleId);
+        if (!rule || rule.organizationId !== organizationId) {
+          return null;
+        }
+
+        return rule;
+      },
       createRule: async () => {
         throw new Error("Unknown plugin: unknown-plugin");
+      },
+      updateRule: async (ruleId: string, organizationId: string) => {
+        const rule = rulesById.get(ruleId);
+        if (!rule || rule.organizationId !== organizationId) {
+          return null;
+        }
+
+        return rule;
+      },
+      setRuleEnabled: async (ruleId: string, organizationId: string, enabled: boolean) => {
+        const rule = rulesById.get(ruleId);
+        if (!rule || rule.organizationId !== organizationId) {
+          return null;
+        }
+
+        const next = { ...rule, enabled };
+        rulesById.set(ruleId, next);
+        return next;
+      },
+      deleteRule: async (ruleId: string, organizationId: string) => {
+        const rule = rulesById.get(ruleId);
+        if (!rule || rule.organizationId !== organizationId) {
+          return false;
+        }
+
+        rulesById.delete(ruleId);
+        return true;
+      },
+      simulateRule: async (ruleId: string, organizationId: string) => {
+        const rule = rulesById.get(ruleId);
+        if (!rule || rule.organizationId !== organizationId) {
+          return null;
+        }
+
+        return {
+          matched: true,
+          actionsTriggered: rule.actions.length,
+          errors: []
+        };
       }
     } as unknown as BizForgeRuntime["automationEngine"]
   };
@@ -193,6 +264,68 @@ test("returns 400 when rule definition validation fails", async () => {
   assert.equal(response.statusCode, 400);
   const body = response.json() as { error: string };
   assert.match(body.error, /unknown plugin/i);
+
+  await app.close();
+});
+
+test("returns 404 when automation rule is missing by id", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStub());
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/automation/rules/missing-rule",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 404);
+  const body = response.json() as { error: string; code: string };
+  assert.equal(body.code, "rule_not_found");
+
+  await app.close();
+});
+
+test("simulates automation rule successfully", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStub());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/automation/rules/rule-1/simulate",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    },
+    payload: {
+      samplePayload: {
+        source: "web"
+      }
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  const body = response.json() as { matched: boolean; actionsTriggered: number; errors: string[] };
+  assert.equal(body.matched, true);
+  assert.equal(body.actionsTriggered, 1);
+  assert.deepEqual(body.errors, []);
+
+  await app.close();
+});
+
+test("deletes automation rule successfully", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStub());
+
+  const response = await app.inject({
+    method: "DELETE",
+    url: "/api/automation/rules/rule-1",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(response.statusCode, 204);
 
   await app.close();
 });

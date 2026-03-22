@@ -9,6 +9,58 @@ const orgHeaderSchema = z.object({
   "x-bizforge-org-id": z.string().min(1)
 });
 
+const automationRuleIdParamsSchema = z.object({
+  id: z.string().min(1)
+});
+
+const automationRuleBodySchema = z.object({
+  triggerEvent: z.string().min(1),
+  conditions: z.array(
+    z.object({
+      field: z.string().min(1),
+      equals: z.any()
+    })
+  ),
+  actions: z.array(
+    z.object({
+      plugin: z.string().min(1),
+      actionKey: z.string().min(1),
+      input: z.record(z.any())
+    })
+  ),
+  enabled: z.boolean().default(true)
+});
+
+const automationRulePatchBodySchema = z
+  .object({
+    triggerEvent: z.string().min(1).optional(),
+    conditions: z
+      .array(
+        z.object({
+          field: z.string().min(1),
+          equals: z.any()
+        })
+      )
+      .optional(),
+    actions: z
+      .array(
+        z.object({
+          plugin: z.string().min(1),
+          actionKey: z.string().min(1),
+          input: z.record(z.any())
+        })
+      )
+      .optional(),
+    enabled: z.boolean().optional()
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required"
+  });
+
+const automationSimulationBodySchema = z.object({
+  samplePayload: z.record(z.any())
+});
+
 export async function registerCoreRoutes(
   server: FastifyInstance,
   runtime: BizForgeRuntime
@@ -206,25 +258,7 @@ export async function registerCoreRoutes(
       return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
     }
 
-    const parsedBody = z
-      .object({
-        triggerEvent: z.string().min(1),
-        conditions: z.array(
-          z.object({
-            field: z.string().min(1),
-            equals: z.any()
-          })
-        ),
-        actions: z.array(
-          z.object({
-            plugin: z.string().min(1),
-            actionKey: z.string().min(1),
-            input: z.record(z.any())
-          })
-        ),
-        enabled: z.boolean().default(true)
-      })
-      .safeParse(request.body);
+    const parsedBody = automationRuleBodySchema.safeParse(request.body);
 
     if (!parsedBody.success) {
       return reply.code(400).send({ error: "Invalid automation rule payload" });
@@ -250,5 +284,202 @@ export async function registerCoreRoutes(
       const message = error instanceof Error ? error.message : "Invalid automation rule";
       return reply.code(400).send({ error: message });
     }
+  });
+
+  server.get("/api/automation/rules/:id", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    const rule = await runtime.automationEngine.getRule(params.id, headers["x-bizforge-org-id"]);
+
+    if (!rule) {
+      return reply.code(404).send({ error: "Automation rule not found", code: "rule_not_found" });
+    }
+
+    return rule;
+  });
+
+  server.patch("/api/automation/rules/:id", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const parsedBody = automationRulePatchBodySchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid automation rule payload" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    const body = parsedBody.data;
+    const patch: Partial<{
+      triggerEvent: string;
+      conditions: Array<{ field: string; equals: unknown }>;
+      actions: Array<{ plugin: string; actionKey: string; input: Record<string, unknown> }>;
+      enabled: boolean;
+    }> = {};
+
+    if (body.triggerEvent !== undefined) {
+      patch.triggerEvent = body.triggerEvent;
+    }
+
+    if (body.conditions !== undefined) {
+      patch.conditions = body.conditions.map((condition) => ({
+        field: condition.field,
+        equals: condition.equals as unknown
+      }));
+    }
+
+    if (body.actions !== undefined) {
+      patch.actions = body.actions;
+    }
+
+    if (body.enabled !== undefined) {
+      patch.enabled = body.enabled;
+    }
+
+    try {
+      const updated = await runtime.automationEngine.updateRule(
+        params.id,
+        headers["x-bizforge-org-id"],
+        patch
+      );
+
+      if (!updated) {
+        return reply
+          .code(404)
+          .send({ error: "Automation rule not found", code: "rule_not_found" });
+      }
+
+      return updated;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid automation rule";
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  server.post("/api/automation/rules/:id/enable", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    const updated = await runtime.automationEngine.setRuleEnabled(
+      params.id,
+      headers["x-bizforge-org-id"],
+      true
+    );
+
+    if (!updated) {
+      return reply.code(404).send({ error: "Automation rule not found", code: "rule_not_found" });
+    }
+
+    return updated;
+  });
+
+  server.post("/api/automation/rules/:id/disable", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    const updated = await runtime.automationEngine.setRuleEnabled(
+      params.id,
+      headers["x-bizforge-org-id"],
+      false
+    );
+
+    if (!updated) {
+      return reply.code(404).send({ error: "Automation rule not found", code: "rule_not_found" });
+    }
+
+    return updated;
+  });
+
+  server.delete("/api/automation/rules/:id", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    const deleted = await runtime.automationEngine.deleteRule(
+      params.id,
+      headers["x-bizforge-org-id"]
+    );
+
+    if (!deleted) {
+      return reply.code(404).send({ error: "Automation rule not found", code: "rule_not_found" });
+    }
+
+    return reply.code(204).send();
+  });
+
+  server.post("/api/automation/rules/:id/simulate", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const parsedParams = automationRuleIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid automation rule id" });
+    }
+
+    const parsedBody = automationSimulationBodySchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid simulation payload" });
+    }
+
+    const headers = parsedHeaders.data;
+    const params = parsedParams.data;
+    const body = parsedBody.data;
+
+    const result = await runtime.automationEngine.simulateRule(
+      params.id,
+      headers["x-bizforge-org-id"],
+      body.samplePayload
+    );
+
+    if (!result) {
+      return reply.code(404).send({ error: "Automation rule not found", code: "rule_not_found" });
+    }
+
+    return result;
   });
 }

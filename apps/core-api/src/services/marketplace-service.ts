@@ -24,18 +24,27 @@ export class MarketplaceService {
   async listCatalog(organizationId: string): Promise<MarketplacePluginRecord[]> {
     const plugins = this.options.pluginEngine.list();
     const catalog = await Promise.all(
-      plugins.map(async (plugin) => ({
-        name: plugin.manifest.name,
-        version: plugin.manifest.version,
-        author: plugin.manifest.author,
-        description: plugin.manifest.description,
-        status: plugin.status,
-        permissions: [...plugin.manifest.permissions],
-        installed: await this.options.pluginInstallRepository.isInstalled(
+      plugins.map(async (plugin) => {
+        const installed = await this.options.pluginInstallRepository.isInstalled(
           organizationId,
           plugin.manifest.name
-        )
-      }))
+        );
+
+        const record: MarketplacePluginRecord = {
+          name: plugin.manifest.name,
+          version: plugin.manifest.version,
+          author: plugin.manifest.author,
+          status: plugin.status,
+          permissions: [...plugin.manifest.permissions],
+          installed
+        };
+
+        if (plugin.manifest.description !== undefined) {
+          record.description = plugin.manifest.description;
+        }
+
+        return record;
+      })
     );
 
     return catalog.sort((a, b) => a.name.localeCompare(b.name));

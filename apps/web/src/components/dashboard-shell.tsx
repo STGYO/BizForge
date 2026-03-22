@@ -81,9 +81,12 @@ export function DashboardShell({
                 >
                   Marketplace
                 </button>
-                <button className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
+                <a
+                  href="/automations"
+                  className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white"
+                >
                   New Automation
-                </button>
+                </a>
               </div>
             </div>
           </header>

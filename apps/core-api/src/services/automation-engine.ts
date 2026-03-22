@@ -32,6 +32,12 @@ export interface AutomationRule {
   enabled: boolean;
 }
 
+export interface SimulationResult {
+  matched: boolean;
+  actionsTriggered: number;
+  errors: string[];
+}
+
 export class AutomationEngine {
   constructor(
     private readonly eventBus: InMemoryEventBus,
@@ -48,6 +54,19 @@ export class AutomationEngine {
   }
 
   async createRule(input: Omit<AutomationRule, "id">): Promise<AutomationRule> {
+    const triggerValidation = this.validateTriggerExists(input.triggerEvent);
+    if (!triggerValidation.valid) {
+      throw new Error(triggerValidation.error);
+    }
+
+    const conditionValidation = this.validateConditionFields(
+      input.triggerEvent,
+      input.conditions
+    );
+    if (!conditionValidation.valid) {
+      throw new Error(conditionValidation.error);
+    }
+
     const validation = this.validateRuleDefinition(input.actions);
     if (!validation.valid) {
       throw new Error(validation.error);
@@ -60,6 +79,118 @@ export class AutomationEngine {
   async listRules(organizationId: string): Promise<AutomationRule[]> {
     const records = await this.repository.listByOrganization(organizationId);
     return records.map((record) => this.toAutomationRule(record));
+  }
+
+  async getRule(ruleId: string, organizationId: string): Promise<AutomationRule | null> {
+    const record = await this.repository.getById(ruleId, organizationId);
+    if (!record) {
+      return null;
+    }
+
+    return this.toAutomationRule(record);
+  }
+
+  async updateRule(
+    ruleId: string,
+    organizationId: string,
+    patch: Partial<Omit<AutomationRule, "id" | "organizationId">>
+  ): Promise<AutomationRule | null> {
+    const existing = await this.repository.getById(ruleId, organizationId);
+    if (!existing) {
+      return null;
+    }
+
+    const merged = {
+      triggerEvent: patch.triggerEvent ?? existing.triggerEvent,
+      conditions: patch.conditions ?? existing.conditions,
+      actions: patch.actions ?? existing.actions,
+      enabled: patch.enabled ?? existing.enabled
+    };
+
+    const triggerValidation = this.validateTriggerExists(merged.triggerEvent);
+    if (!triggerValidation.valid) {
+      throw new Error(triggerValidation.error);
+    }
+
+    const conditionValidation = this.validateConditionFields(
+      merged.triggerEvent,
+      merged.conditions
+    );
+    if (!conditionValidation.valid) {
+      throw new Error(conditionValidation.error);
+    }
+
+    const actionValidation = this.validateRuleDefinition(merged.actions);
+    if (!actionValidation.valid) {
+      throw new Error(actionValidation.error);
+    }
+
+    const updated = await this.repository.update(ruleId, organizationId, merged);
+    if (!updated) {
+      return null;
+    }
+
+    return this.toAutomationRule(updated);
+  }
+
+  async setRuleEnabled(
+    ruleId: string,
+    organizationId: string,
+    enabled: boolean
+  ): Promise<AutomationRule | null> {
+    const updated = await this.repository.setEnabled(ruleId, organizationId, enabled);
+    if (!updated) {
+      return null;
+    }
+
+    return this.toAutomationRule(updated);
+  }
+
+  async deleteRule(ruleId: string, organizationId: string): Promise<boolean> {
+    return await this.repository.delete(ruleId, organizationId);
+  }
+
+  async simulateRule(
+    ruleId: string,
+    organizationId: string,
+    samplePayload: Record<string, unknown>
+  ): Promise<SimulationResult | null> {
+    const record = await this.repository.getById(ruleId, organizationId);
+    if (!record) {
+      return null;
+    }
+
+    const conditionValidation = this.validateConditionFields(
+      record.triggerEvent,
+      record.conditions,
+      samplePayload
+    );
+    if (!conditionValidation.valid) {
+      return {
+        matched: false,
+        actionsTriggered: 0,
+        errors: [conditionValidation.error]
+      };
+    }
+
+    const actionValidation = this.validateRuleDefinition(record.actions);
+    if (!actionValidation.valid) {
+      return {
+        matched: false,
+        actionsTriggered: 0,
+        errors: [actionValidation.error]
+      };
+    }
+
+    const matched = record.conditions.every(
+      (condition) => samplePayload[condition.field] === condition.equals
+    );
+
+    return {
+      matched,
+      actionsTriggered: matched ? record.actions.length : 0,
+      errors: []
+    };
   }
 
   listCatalog(): {
@@ -114,6 +245,64 @@ export class AutomationEngine {
         return {
           valid: false,
           error: `Action ${action.actionKey} is not registered by plugin ${action.plugin}`
+        };
+      }
+    }
+
+    return { valid: true };
+  }
+
+  validateTriggerExists(triggerEvent: string): { valid: true } | { valid: false; error: string } {
+    const builtInTriggers = new Set(["lead.generated", "customer.created"]);
+    const catalogTriggers = new Set(this.listCatalog().triggers.map((trigger) => trigger.eventType));
+    const knownTriggers = new Set([...builtInTriggers, ...catalogTriggers]);
+
+    if (!knownTriggers.has(triggerEvent)) {
+      return {
+        valid: false,
+        error: `Unknown trigger event: ${triggerEvent}`
+      };
+    }
+
+    return { valid: true };
+  }
+
+  private validateConditionFields(
+    triggerEvent: string,
+    conditions: AutomationCondition[],
+    samplePayload?: Record<string, unknown>
+  ): { valid: true } | { valid: false; error: string } {
+    const payloadKeys =
+      samplePayload && typeof samplePayload === "object" ? Object.keys(samplePayload) : null;
+
+    if (payloadKeys && payloadKeys.length > 0) {
+      for (const condition of conditions) {
+        if (!payloadKeys.includes(condition.field)) {
+          return {
+            valid: false,
+            error: `Condition field ${condition.field} is not present in sample payload`
+          };
+        }
+      }
+
+      return { valid: true };
+    }
+
+    const coreFieldMap: Record<string, string[]> = {
+      "lead.generated": ["source"],
+      "customer.created": ["source"]
+    };
+
+    const knownFields = coreFieldMap[triggerEvent];
+    if (!knownFields) {
+      return { valid: true };
+    }
+
+    for (const condition of conditions) {
+      if (!knownFields.includes(condition.field)) {
+        return {
+          valid: false,
+          error: `Condition field ${condition.field} is not supported for trigger ${triggerEvent}`
         };
       }
     }

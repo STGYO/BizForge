@@ -33,6 +33,18 @@ export interface AutomationRuleRepository {
   create(input: CreateAutomationRuleInput): Promise<AutomationRuleRecord>;
   listByOrganization(organizationId: string): Promise<AutomationRuleRecord[]>;
   listEnabledByTrigger(triggerEvent: string): Promise<AutomationRuleRecord[]>;
+  getById(ruleId: string, organizationId: string): Promise<AutomationRuleRecord | null>;
+  update(
+    ruleId: string,
+    organizationId: string,
+    patch: Partial<Omit<CreateAutomationRuleInput, "organizationId">>
+  ): Promise<AutomationRuleRecord | null>;
+  setEnabled(
+    ruleId: string,
+    organizationId: string,
+    enabled: boolean
+  ): Promise<AutomationRuleRecord | null>;
+  delete(ruleId: string, organizationId: string): Promise<boolean>;
 }
 
 export class InMemoryAutomationRuleRepository implements AutomationRuleRepository {
@@ -57,6 +69,54 @@ export class InMemoryAutomationRuleRepository implements AutomationRuleRepositor
     return Array.from(this.rules.values()).filter(
       (rule) => rule.enabled && rule.triggerEvent === triggerEvent
     );
+  }
+
+  async getById(ruleId: string, organizationId: string): Promise<AutomationRuleRecord | null> {
+    const rule = this.rules.get(ruleId);
+    if (!rule || rule.organizationId !== organizationId) {
+      return null;
+    }
+
+    return rule;
+  }
+
+  async update(
+    ruleId: string,
+    organizationId: string,
+    patch: Partial<Omit<CreateAutomationRuleInput, "organizationId">>
+  ): Promise<AutomationRuleRecord | null> {
+    const existing = this.rules.get(ruleId);
+    if (!existing || existing.organizationId !== organizationId) {
+      return null;
+    }
+
+    const next: AutomationRuleRecord = {
+      ...existing,
+      triggerEvent: patch.triggerEvent ?? existing.triggerEvent,
+      conditions: patch.conditions ?? existing.conditions,
+      actions: patch.actions ?? existing.actions,
+      enabled: patch.enabled ?? existing.enabled
+    };
+
+    this.rules.set(ruleId, next);
+    return next;
+  }
+
+  async setEnabled(
+    ruleId: string,
+    organizationId: string,
+    enabled: boolean
+  ): Promise<AutomationRuleRecord | null> {
+    return await this.update(ruleId, organizationId, { enabled });
+  }
+
+  async delete(ruleId: string, organizationId: string): Promise<boolean> {
+    const existing = this.rules.get(ruleId);
+    if (!existing || existing.organizationId !== organizationId) {
+      return false;
+    }
+
+    return this.rules.delete(ruleId);
   }
 }
 
@@ -127,6 +187,109 @@ export class PostgresAutomationRuleRepository implements AutomationRuleRepositor
     }>;
 
     return rows.map((row) => this.mapRow(row));
+  }
+
+  async getById(ruleId: string, organizationId: string): Promise<AutomationRuleRecord | null> {
+    const result = await this.pool.query(
+      `SELECT ${PostgresAutomationRuleRepository.rowColumns}
+       FROM automation_rules
+       WHERE id = $1 AND organization_id = $2`,
+      [ruleId, organizationId]
+    );
+
+    if (result.rowCount === 0) {
+      return null;
+    }
+
+    const row = result.rows[0] as {
+      id: string;
+      organization_id: string;
+      trigger_event: string;
+      conditions: AutomationCondition[] | string;
+      actions: AutomationAction[] | string;
+      enabled: boolean;
+    };
+
+    return this.mapRow(row);
+  }
+
+  async update(
+    ruleId: string,
+    organizationId: string,
+    patch: Partial<Omit<CreateAutomationRuleInput, "organizationId">>
+  ): Promise<AutomationRuleRecord | null> {
+    const existing = await this.getById(ruleId, organizationId);
+    if (!existing) {
+      return null;
+    }
+
+    const next = {
+      triggerEvent: patch.triggerEvent ?? existing.triggerEvent,
+      conditions: patch.conditions ?? existing.conditions,
+      actions: patch.actions ?? existing.actions,
+      enabled: patch.enabled ?? existing.enabled
+    };
+
+    await this.pool.query(
+      `UPDATE automation_rules
+       SET trigger_event = $1,
+           conditions = $2::jsonb,
+           actions = $3::jsonb,
+           enabled = $4
+       WHERE id = $5 AND organization_id = $6`,
+      [
+        next.triggerEvent,
+        JSON.stringify(next.conditions),
+        JSON.stringify(next.actions),
+        next.enabled,
+        ruleId,
+        organizationId
+      ]
+    );
+
+    return {
+      ...existing,
+      ...next
+    };
+  }
+
+  async setEnabled(
+    ruleId: string,
+    organizationId: string,
+    enabled: boolean
+  ): Promise<AutomationRuleRecord | null> {
+    const result = await this.pool.query(
+      `UPDATE automation_rules
+       SET enabled = $1
+       WHERE id = $2 AND organization_id = $3
+       RETURNING ${PostgresAutomationRuleRepository.rowColumns}`,
+      [enabled, ruleId, organizationId]
+    );
+
+    if (result.rowCount === 0) {
+      return null;
+    }
+
+    const row = result.rows[0] as {
+      id: string;
+      organization_id: string;
+      trigger_event: string;
+      conditions: AutomationCondition[] | string;
+      actions: AutomationAction[] | string;
+      enabled: boolean;
+    };
+
+    return this.mapRow(row);
+  }
+
+  async delete(ruleId: string, organizationId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM automation_rules
+       WHERE id = $1 AND organization_id = $2`,
+      [ruleId, organizationId]
+    );
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   private mapRow(row: {

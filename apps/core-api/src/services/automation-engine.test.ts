@@ -169,6 +169,29 @@ test("validates rule definitions against plugin catalog", async () => {
   }
 });
 
+test("rejects createRule when trigger event is unknown", async () => {
+  const { engine } = createEngine(createPluginEngineStub({ status: "enabled", withHandler: true }));
+
+  await assert.rejects(
+    async () => {
+      await engine.createRule({
+        organizationId: "org-1",
+        triggerEvent: "unknown.event",
+        conditions: [],
+        actions: [
+          {
+            plugin: "appointment-manager",
+            actionKey: "schedule_follow_up",
+            input: { customerId: "cust-1", offsetHours: 24 }
+          }
+        ],
+        enabled: true
+      });
+    },
+    /Unknown trigger event/
+  );
+});
+
 test("emits automation.action.failed when action input violates schema", async () => {
   const { eventBus } = createEngine(createPluginEngineStub({ status: "enabled", withHandler: true }));
 
@@ -295,4 +318,39 @@ test("emits validation failure end-to-end when matched rule has invalid action i
   assert.equal(failed.plugin, "appointment-manager");
   assert.equal(failed.actionKey, "schedule_follow_up");
   assert.equal(failed.triggerEventId, "trigger-e2e-2");
+});
+
+test("simulates rule match without executing handlers", async () => {
+  const { engine, eventBus } = createEngine(
+    createPluginEngineStub({ status: "enabled", withHandler: true })
+  );
+
+  const executedEvents: Array<Record<string, unknown>> = [];
+  eventBus.subscribe("automation.action.executed", async (event) => {
+    executedEvents.push(event.payload as Record<string, unknown>);
+  });
+
+  const created = await engine.createRule({
+    organizationId: "org-1",
+    triggerEvent: "lead.generated",
+    conditions: [{ field: "source", equals: "web" }],
+    actions: [
+      {
+        plugin: "appointment-manager",
+        actionKey: "schedule_follow_up",
+        input: { customerId: "cust-200", offsetHours: 24 }
+      }
+    ],
+    enabled: true
+  });
+
+  const result = await engine.simulateRule(created.id, "org-1", {
+    source: "web"
+  });
+
+  assert.ok(result);
+  assert.equal(result?.matched, true);
+  assert.equal(result?.actionsTriggered, 1);
+  assert.deepEqual(result?.errors, []);
+  assert.equal(executedEvents.length, 0);
 });
