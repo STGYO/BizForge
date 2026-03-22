@@ -4,7 +4,10 @@ export function PluginPanel() {
   return (
     <section>
       <h3>Plugin Manager</h3>
-      <p>Core plugin administration, lifecycle controls, and dependency health checks.</p>
+      <p>
+        Manage plugin enablement safely with dependency-aware lifecycle transitions and an
+        auditable state history.
+      </p>
     </section>
   );
 }

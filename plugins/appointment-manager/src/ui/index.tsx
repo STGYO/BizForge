@@ -4,7 +4,10 @@ export function AppointmentManagerPanel() {
   return (
     <section>
       <h3>Appointment Manager</h3>
-      <p>Bookings, calendar views, and appointment reminders are rendered here.</p>
+      <p>
+        Coordinate scheduling, reschedules, and completion tracking while automation can create
+        follow-up bookings for customers automatically.
+      </p>
     </section>
   );
 }

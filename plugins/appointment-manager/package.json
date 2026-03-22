@@ -6,12 +6,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "echo \"No tests configured for appointment-manager\"",
-    "test:watch": "echo \"No watch tests configured for appointment-manager\"",
+    "test": "tsx --test src/**/*.test.ts",
+    "test:watch": "tsx --test --watch src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"No lint configured for appointment-manager\""
   },
   "dependencies": {
     "@bizforge/plugin-sdk": "file:../../packages/plugin-sdk"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5"
   }
 }
