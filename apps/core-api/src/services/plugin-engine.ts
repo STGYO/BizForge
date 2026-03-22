@@ -88,6 +88,8 @@ export class PluginEngine {
         continue;
       }
 
+      const normalizedManifest = rawManifest.replace(/^\uFEFF/, "");
+
       const parsedJson = z.string().transform((text, context) => {
         try {
           return JSON.parse(text) as unknown;
@@ -99,7 +101,7 @@ export class PluginEngine {
           return z.NEVER;
         }
       });
-      const parsedManifestJson = parsedJson.safeParse(rawManifest);
+      const parsedManifestJson = parsedJson.safeParse(normalizedManifest);
       if (!parsedManifestJson.success) {
         report.skippedPlugins += 1;
         report.failedPlugins.push({
@@ -154,7 +156,10 @@ export class PluginEngine {
       report.loadedPlugins += 1;
 
       for (const route of registration.routes ?? []) {
-        claimedRoutes.set(this.routeSignature(route.method, route.path), manifest.name);
+        claimedRoutes.set(
+          this.routeSignature(manifest.name, route.method, route.path),
+          manifest.name
+        );
       }
     }
 
@@ -285,7 +290,7 @@ export class PluginEngine {
     const conflicts: string[] = [];
 
     for (const route of registration.routes ?? []) {
-      const signature = this.routeSignature(route.method, route.path);
+      const signature = this.routeSignature(pluginName, route.method, route.path);
       const owner = claimedRoutes.get(signature);
       if (owner && owner !== pluginName) {
         conflicts.push(`${signature} already claimed by ${owner}`);
@@ -295,7 +300,7 @@ export class PluginEngine {
     return conflicts;
   }
 
-  private routeSignature(method: string, pathValue: string): string {
-    return `${method.toUpperCase()} ${pathValue}`;
+  private routeSignature(pluginName: string, method: string, pathValue: string): string {
+    return `${method.toUpperCase()} /api/plugins/${pluginName}${pathValue}`;
   }
 }
