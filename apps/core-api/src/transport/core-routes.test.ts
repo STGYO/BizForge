@@ -242,6 +242,14 @@ test("blocks uninstall when plugin is referenced by automation rules", async () 
     ])
   );
 
+  await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/appointment-manager/install",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
   const response = await app.inject({
     method: "POST",
     url: "/api/plugins/appointment-manager/uninstall",
@@ -261,6 +269,14 @@ test("blocks uninstall when plugin is referenced by automation rules", async () 
 test("uninstalls plugin when no automation rules reference it", async () => {
   const app = Fastify();
   await registerCoreRoutes(app, createRuntimeStubWithRules([]));
+
+  await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/appointment-manager/install",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
 
   const response = await app.inject({
     method: "POST",
@@ -294,6 +310,118 @@ test("returns not found when uninstalling unknown plugin", async () => {
   const body = response.json() as { error: string; code: string };
   assert.match(body.error, /plugin not found/i);
   assert.equal(body.code, "plugin_not_found");
+
+  await app.close();
+});
+
+test("returns 400 when org header is missing for marketplace catalog", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStubWithRules([]));
+
+  const response = await app.inject({ method: "GET", url: "/api/marketplace/plugins" });
+
+  assert.equal(response.statusCode, 400);
+  const body = response.json() as { error: string };
+  assert.match(body.error, /x-bizforge-org-id/i);
+
+  await app.close();
+});
+
+test("marketplace install and uninstall update org-scoped catalog state", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStubWithRules([]));
+
+  const beforeInstall = await app.inject({
+    method: "GET",
+    url: "/api/marketplace/plugins",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(beforeInstall.statusCode, 200);
+  const beforeCatalog = beforeInstall.json() as Array<{ name: string; installed: boolean }>;
+  assert.equal(beforeCatalog[0]?.name, "appointment-manager");
+  assert.equal(beforeCatalog[0]?.installed, false);
+
+  const installResponse = await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/appointment-manager/install",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(installResponse.statusCode, 200);
+
+  const afterInstall = await app.inject({
+    method: "GET",
+    url: "/api/marketplace/plugins",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  const installedCatalog = afterInstall.json() as Array<{ name: string; installed: boolean }>;
+  assert.equal(installedCatalog[0]?.installed, true);
+
+  const uninstallResponse = await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/appointment-manager/uninstall",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  assert.equal(uninstallResponse.statusCode, 200);
+
+  const afterUninstall = await app.inject({
+    method: "GET",
+    url: "/api/marketplace/plugins",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  const uninstalledCatalog = afterUninstall.json() as Array<{ name: string; installed: boolean }>;
+  assert.equal(uninstalledCatalog[0]?.installed, false);
+
+  await app.close();
+});
+
+test("marketplace catalog is isolated per organization", async () => {
+  const app = Fastify();
+  await registerCoreRoutes(app, createRuntimeStubWithRules([]));
+
+  await app.inject({
+    method: "POST",
+    url: "/api/marketplace/plugins/appointment-manager/install",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  const orgOneCatalog = await app.inject({
+    method: "GET",
+    url: "/api/marketplace/plugins",
+    headers: {
+      "x-bizforge-org-id": "org-1"
+    }
+  });
+
+  const orgTwoCatalog = await app.inject({
+    method: "GET",
+    url: "/api/marketplace/plugins",
+    headers: {
+      "x-bizforge-org-id": "org-2"
+    }
+  });
+
+  const orgOne = orgOneCatalog.json() as Array<{ installed: boolean }>;
+  const orgTwo = orgTwoCatalog.json() as Array<{ installed: boolean }>;
+
+  assert.equal(orgOne[0]?.installed, true);
+  assert.equal(orgTwo[0]?.installed, false);
 
   await app.close();
 });

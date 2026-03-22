@@ -1,7 +1,8 @@
 import type { AutomationEngine } from "./automation-engine";
 import type { PluginEngine } from "./plugin-engine";
+import type { PluginInstallRepository } from "../repositories/plugin-install-repository";
 
-type LifecycleErrorCode = "plugin_not_found" | "plugin_in_use";
+type LifecycleErrorCode = "plugin_not_found" | "plugin_in_use" | "plugin_not_installed";
 
 interface LifecycleError {
   httpStatus: 404 | 409;
@@ -23,13 +24,15 @@ type LifecycleOutcome =
 interface PluginLifecycleServiceOptions {
   pluginEngine: Pick<PluginEngine, "list" | "enable" | "disable">;
   automationEngine: Pick<AutomationEngine, "listRules">;
+  pluginInstallRepository?: PluginInstallRepository;
 }
 
 export class PluginLifecycleService {
   constructor(private readonly options: PluginLifecycleServiceOptions) {}
 
-  async installPlugin(name: string): Promise<LifecycleOutcome> {
-    if (!this.pluginExists(name)) {
+  async installPlugin(name: string, organizationId?: string): Promise<LifecycleOutcome> {
+    const plugin = this.findPlugin(name);
+    if (!plugin) {
       return {
         ok: false,
         error: {
@@ -41,6 +44,15 @@ export class PluginLifecycleService {
     }
 
     this.options.pluginEngine.enable(name);
+
+    if (organizationId && this.options.pluginInstallRepository) {
+      await this.options.pluginInstallRepository.markInstalled({
+        organizationId,
+        pluginName: name,
+        installedVersion: plugin.manifest.version
+      });
+    }
+
     return {
       ok: true,
       status: "installed",
@@ -49,7 +61,7 @@ export class PluginLifecycleService {
   }
 
   async uninstallPlugin(name: string, organizationId: string): Promise<LifecycleOutcome> {
-    if (!this.pluginExists(name)) {
+    if (!this.findPlugin(name)) {
       return {
         ok: false,
         error: {
@@ -58,6 +70,24 @@ export class PluginLifecycleService {
           message: "Plugin not found"
         }
       };
+    }
+
+    if (this.options.pluginInstallRepository) {
+      const isInstalledForOrg = await this.options.pluginInstallRepository.isInstalled(
+        organizationId,
+        name
+      );
+
+      if (!isInstalledForOrg) {
+        return {
+          ok: false,
+          error: {
+            httpStatus: 409,
+            code: "plugin_not_installed",
+            message: "Plugin is not installed for organization"
+          }
+        };
+      }
     }
 
     const rules = await this.options.automationEngine.listRules(organizationId);
@@ -76,7 +106,23 @@ export class PluginLifecycleService {
       };
     }
 
-    this.options.pluginEngine.disable(name);
+    if (this.options.pluginInstallRepository) {
+      await this.options.pluginInstallRepository.markUninstalled({
+        organizationId,
+        pluginName: name
+      });
+
+      const totalInstalls = await this.options.pluginInstallRepository.countOrganizationsForPlugin(
+        name
+      );
+
+      if (totalInstalls === 0) {
+        this.options.pluginEngine.disable(name);
+      }
+    } else {
+      this.options.pluginEngine.disable(name);
+    }
+
     return {
       ok: true,
       status: "uninstalled",
@@ -84,9 +130,7 @@ export class PluginLifecycleService {
     };
   }
 
-  private pluginExists(name: string): boolean {
-    return this.options.pluginEngine
-      .list()
-      .some((entry) => entry.manifest.name === name);
+  private findPlugin(name: string) {
+    return this.options.pluginEngine.list().find((entry) => entry.manifest.name === name);
   }
 }

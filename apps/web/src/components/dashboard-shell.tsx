@@ -1,15 +1,36 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
 export interface DashboardPlugin {
   name: string;
   version: string;
   status: "enabled" | "disabled";
 }
 
+interface MarketplacePreviewPlugin {
+  name: string;
+  version: string;
+  author: string;
+  installed: boolean;
+}
+
 interface DashboardShellProps {
   plugins: DashboardPlugin[];
   pluginLoadError: string | null;
+  marketplacePreview: MarketplacePreviewPlugin[];
+  marketplaceLoadError: string | null;
 }
 
-export function DashboardShell({ plugins, pluginLoadError }: DashboardShellProps) {
+export function DashboardShell({
+  plugins,
+  pluginLoadError,
+  marketplacePreview,
+  marketplaceLoadError
+}: DashboardShellProps) {
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+
   return (
     <div className="min-h-screen p-4 md:p-6">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 rounded-3xl bg-white/70 p-4 shadow-lg backdrop-blur md:grid-cols-[260px_1fr] md:p-6">
@@ -54,7 +75,10 @@ export function DashboardShell({ plugins, pluginLoadError }: DashboardShellProps
                 placeholder="Search contacts, workflows, events"
               />
               <div className="flex gap-2">
-                <button className="rounded-xl bg-shell px-4 py-2 text-sm font-semibold text-white">
+                <button
+                  onClick={() => setMarketplaceOpen(true)}
+                  className="rounded-xl bg-shell px-4 py-2 text-sm font-semibold text-white"
+                >
                   Marketplace
                 </button>
                 <button className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
@@ -80,6 +104,65 @@ export function DashboardShell({ plugins, pluginLoadError }: DashboardShellProps
           </main>
         </section>
       </div>
+
+      {marketplaceOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-xl">Marketplace Preview</h2>
+              <button
+                onClick={() => setMarketplaceOpen(false)}
+                className="rounded-lg border border-black/10 px-3 py-1 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            {marketplaceLoadError ? (
+              <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                {marketplaceLoadError}
+              </p>
+            ) : marketplacePreview.length === 0 ? (
+              <p className="mt-4 rounded-xl bg-black/5 px-3 py-2 text-sm text-black/70">
+                No marketplace plugins available.
+              </p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {marketplacePreview.map((plugin) => (
+                  <li key={plugin.name} className="rounded-xl border border-black/10 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">{plugin.name}</p>
+                        <p className="text-xs text-black/60">
+                          v{plugin.version} by {plugin.author}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          plugin.installed
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {plugin.installed ? "installed" : "available"}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <Link
+                href="/marketplace"
+                className="rounded-xl bg-shell px-4 py-2 text-sm font-semibold text-white"
+              >
+                Open Full Marketplace
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

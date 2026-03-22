@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { BizForgeRuntime } from "../server";
 import { PluginLifecycleService } from "../services/plugin-lifecycle-service";
+import { MarketplaceService } from "../services/marketplace-service";
+import { InMemoryPluginInstallRepository } from "../repositories/plugin-install-repository";
 
 const orgHeaderSchema = z.object({
   "x-bizforge-org-id": z.string().min(1)
@@ -12,9 +14,15 @@ export async function registerCoreRoutes(
   runtime: BizForgeRuntime
 ): Promise<void> {
   runtime.automationEngine.initialize();
+  const pluginInstallRepository = new InMemoryPluginInstallRepository();
   const pluginLifecycleService = new PluginLifecycleService({
     pluginEngine: runtime.pluginEngine,
-    automationEngine: runtime.automationEngine
+    automationEngine: runtime.automationEngine,
+    pluginInstallRepository
+  });
+  const marketplaceService = new MarketplaceService({
+    pluginEngine: runtime.pluginEngine,
+    pluginInstallRepository
   });
 
   server.get("/health", async () => ({
@@ -62,6 +70,78 @@ export async function registerCoreRoutes(
 
     const params = parsedParams.data;
     const outcome = await pluginLifecycleService.installPlugin(params.name);
+    if (!outcome.ok) {
+      return reply.code(outcome.error.httpStatus).send({
+        error: outcome.error.message,
+        code: outcome.error.code
+      });
+    }
+
+    return reply.code(200).send({
+      status: outcome.status,
+      plugin: outcome.plugin
+    });
+  });
+
+  server.get("/api/marketplace/plugins", async (request, reply) => {
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const headers = parsedHeaders.data;
+    return await marketplaceService.listCatalog(headers["x-bizforge-org-id"]);
+  });
+
+  server.post("/api/marketplace/plugins/:name/install", async (request, reply) => {
+    const parsedParams = z.object({ name: z.string().min(1) }).safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid plugin name" });
+    }
+
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const params = parsedParams.data;
+    const headers = parsedHeaders.data;
+    const outcome = await pluginLifecycleService.installPlugin(
+      params.name,
+      headers["x-bizforge-org-id"]
+    );
+
+    if (!outcome.ok) {
+      return reply.code(outcome.error.httpStatus).send({
+        error: outcome.error.message,
+        code: outcome.error.code
+      });
+    }
+
+    return reply.code(200).send({
+      status: outcome.status,
+      plugin: outcome.plugin
+    });
+  });
+
+  server.post("/api/marketplace/plugins/:name/uninstall", async (request, reply) => {
+    const parsedParams = z.object({ name: z.string().min(1) }).safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.code(400).send({ error: "Invalid plugin name" });
+    }
+
+    const parsedHeaders = orgHeaderSchema.safeParse(request.headers);
+    if (!parsedHeaders.success) {
+      return reply.code(400).send({ error: "Missing x-bizforge-org-id header" });
+    }
+
+    const params = parsedParams.data;
+    const headers = parsedHeaders.data;
+    const outcome = await pluginLifecycleService.uninstallPlugin(
+      params.name,
+      headers["x-bizforge-org-id"]
+    );
+
     if (!outcome.ok) {
       return reply.code(outcome.error.httpStatus).send({
         error: outcome.error.message,
