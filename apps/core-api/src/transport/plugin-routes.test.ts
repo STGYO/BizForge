@@ -65,6 +65,13 @@ function buildRuntime(options?: {
   return {
     eventBus,
     persistence: "in-memory",
+    pluginDatabase: {
+      mode: "in-memory",
+      isAvailable: false,
+      query: async () => {
+        throw new Error("plugin database unavailable in test runtime");
+      }
+    },
     automationEngine: {} as BizForgeRuntime["automationEngine"],
     pluginEngine: {
       list: () => [

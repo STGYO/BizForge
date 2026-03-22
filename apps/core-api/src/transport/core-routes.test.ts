@@ -32,6 +32,13 @@ function createRuntimeStub(): BizForgeRuntime {
   return {
     persistence: "in-memory",
     eventBus: {} as BizForgeRuntime["eventBus"],
+    pluginDatabase: {
+      mode: "in-memory",
+      isAvailable: false,
+      query: async () => {
+        throw new Error("plugin database unavailable in test runtime");
+      }
+    },
     pluginEngine: {
       list: () => [],
       disable: () => false,
@@ -113,6 +120,13 @@ function createRuntimeStubWithRules(
   return {
     persistence: "in-memory",
     eventBus: {} as BizForgeRuntime["eventBus"],
+    pluginDatabase: {
+      mode: "in-memory",
+      isAvailable: false,
+      query: async () => {
+        throw new Error("plugin database unavailable in test runtime");
+      }
+    },
     pluginEngine: {
       list: () =>
         plugins.map((plugin) => ({

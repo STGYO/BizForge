@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { EventEnvelope } from "@bizforge/plugin-sdk";
+import type { EventEnvelope, PluginDatabaseClient } from "@bizforge/plugin-sdk";
 import { InMemoryEventBus } from "./event-bus";
 import { PluginEngine } from "./plugin-engine";
+import { createPluginPersistenceHelper } from "./plugin-persistence";
 import {
   type AutomationRuleRepository,
   type AutomationAction,
@@ -42,7 +43,8 @@ export class AutomationEngine {
   constructor(
     private readonly eventBus: InMemoryEventBus,
     private readonly pluginEngine: PluginEngine,
-    private readonly repository: AutomationRuleRepository
+    private readonly repository: AutomationRuleRepository,
+    private readonly pluginDatabase?: PluginDatabaseClient
   ) {}
 
   initialize(): void {
@@ -386,6 +388,15 @@ export class AutomationEngine {
     }
 
     try {
+      const persistence = this.pluginDatabase
+        ? createPluginPersistenceHelper(this.eventBus, this.pluginDatabase)
+        : undefined;
+      const runtimeContext = {
+        eventBus: this.eventBus,
+        ...(this.pluginDatabase ? { db: this.pluginDatabase } : {}),
+        ...(persistence ? { persistence } : {})
+      };
+
       await handler(
         {
           body: undefined,
@@ -395,7 +406,7 @@ export class AutomationEngine {
           rawEvent: event,
           actionInput: payload.input
         },
-        { eventBus: this.eventBus }
+        runtimeContext
       );
 
       await this.eventBus.publish({

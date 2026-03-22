@@ -3,6 +3,7 @@ import { PluginEngine } from "./services/plugin-engine";
 import { InMemoryEventBus } from "./services/event-bus";
 import { AutomationEngine } from "./services/automation-engine";
 import { MigrationRunner } from "./services/migration-runner";
+import { createPluginDatabaseClient } from "./services/plugin-database";
 import { registerCoreRoutes } from "./transport/core-routes";
 import { registerPluginRoutes } from "./transport/plugin-routes";
 import { checkPostgresHealth, getPgPool } from "./db/postgres";
@@ -11,11 +12,13 @@ import {
   PostgresAutomationRuleRepository,
   type AutomationRuleRepository
 } from "./repositories/automation-rule-repository";
+import type { PluginDatabaseClient } from "@bizforge/plugin-sdk";
 
 export interface BizForgeRuntime {
   pluginEngine: PluginEngine;
   eventBus: InMemoryEventBus;
   automationEngine: AutomationEngine;
+  pluginDatabase: PluginDatabaseClient;
   persistence: "in-memory" | "postgres";
 }
 
@@ -38,16 +41,20 @@ export async function createServer(): Promise<FastifyInstance> {
       ? new PostgresAutomationRuleRepository(pgPool)
       : new InMemoryAutomationRuleRepository();
 
+  const pluginDatabase = createPluginDatabaseClient(pgPool && dbHealthy ? pgPool : null);
+
   const automationEngine = new AutomationEngine(
     eventBus,
     pluginEngine,
-    automationRuleRepository
+    automationRuleRepository,
+    pluginDatabase
   );
 
   const runtime: BizForgeRuntime = {
     eventBus,
     pluginEngine,
     automationEngine,
+    pluginDatabase,
     persistence: pgPool && dbHealthy ? "postgres" : "in-memory"
   };
 

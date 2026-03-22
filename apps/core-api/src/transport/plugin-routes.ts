@@ -1,13 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import type { PluginRuntimeContext } from "@bizforge/plugin-sdk";
 import type { BizForgeRuntime } from "../server";
+import { createPluginPersistenceHelper } from "../services/plugin-persistence";
 
 export async function registerPluginRoutes(
   server: FastifyInstance,
   runtime: BizForgeRuntime
 ): Promise<void> {
   const context: PluginRuntimeContext = {
-    eventBus: runtime.eventBus
+    eventBus: runtime.eventBus,
+    db: runtime.pluginDatabase,
+    persistence: createPluginPersistenceHelper(runtime.eventBus, runtime.pluginDatabase)
   };
 
   for (const plugin of runtime.pluginEngine.list()) {

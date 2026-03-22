@@ -38,8 +38,45 @@ export interface PluginEventBus {
   subscribe(eventType: string, handler: (event: EventEnvelope) => Promise<void>): () => void;
 }
 
+export interface PluginQueryResult<TRow = Record<string, unknown>> {
+  rows: TRow[];
+  rowCount: number;
+}
+
+export interface PluginDatabaseClient {
+  readonly mode: "postgres" | "in-memory";
+  readonly isAvailable: boolean;
+  query<TRow = Record<string, unknown>>(
+    text: string,
+    params?: unknown[]
+  ): Promise<PluginQueryResult<TRow>>;
+}
+
+export interface PluginEventWriteInput {
+  eventType: string;
+  organizationId: string;
+  sourcePlugin: string;
+  payload: unknown;
+  correlationId?: string;
+}
+
+export interface PluginPersistenceHelper {
+  readonly mode: "postgres" | "in-memory";
+  readonly isDatabaseAvailable: boolean;
+  createId(prefix?: string): string;
+  withOrganizationParams(organizationId: string, params?: unknown[]): unknown[];
+  queryByOrganization<TRow = Record<string, unknown>>(
+    text: string,
+    organizationId: string,
+    params?: unknown[]
+  ): Promise<PluginQueryResult<TRow>>;
+  writeEvent(input: PluginEventWriteInput): Promise<EventEnvelope>;
+}
+
 export interface PluginRuntimeContext {
   eventBus: PluginEventBus;
+  db?: PluginDatabaseClient;
+  persistence?: PluginPersistenceHelper;
 }
 
 export type PluginHandler = (

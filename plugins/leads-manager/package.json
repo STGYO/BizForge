@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@bizforge/plugin-leads-manager",
   "version": "1.0.0",
   "private": true,
@@ -6,12 +6,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "echo \"No tests configured for leads-manager\"",
-    "test:watch": "echo \"No watch tests configured for leads-manager\"",
+    "test": "tsx --test src/**/*.test.ts",
+    "test:watch": "tsx --watch --test src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"No lint configured for leads-manager\""
   },
   "dependencies": {
     "@bizforge/plugin-sdk": "file:../../packages/plugin-sdk"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
   }
 }
