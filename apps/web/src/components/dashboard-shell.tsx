@@ -2,6 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import {
+  AutomationRuleBuilder,
+  createEmptyDraft,
+  serializeDraft,
+  type RuleDraft
+} from "./automation-rule-builder";
+import { createAutomationRule, type AutomationCatalog } from "../lib/automation-api";
 
 export interface DashboardPlugin {
   name: string;
@@ -21,15 +28,69 @@ interface DashboardShellProps {
   pluginLoadError: string | null;
   marketplacePreview: MarketplacePreviewPlugin[];
   marketplaceLoadError: string | null;
+  automationCatalog: AutomationCatalog | null;
+  automationCatalogLoadError: string | null;
 }
 
 export function DashboardShell({
   plugins,
   pluginLoadError,
   marketplacePreview,
-  marketplaceLoadError
+  marketplaceLoadError,
+  automationCatalog,
+  automationCatalogLoadError
 }: DashboardShellProps) {
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [automationModalOpen, setAutomationModalOpen] = useState(false);
+  const [automationSubmitting, setAutomationSubmitting] = useState(false);
+  const [automationError, setAutomationError] = useState<string | null>(null);
+  const [automationSuccess, setAutomationSuccess] = useState<string | null>(null);
+  const [automationDraft, setAutomationDraft] = useState<RuleDraft>(() =>
+    automationCatalog ? createEmptyDraft(automationCatalog) : {
+      triggerEvent: "",
+      conditions: [],
+      actions: [],
+      enabled: true
+    }
+  );
+
+  async function handleQuickCreate(): Promise<void> {
+    if (!automationCatalog) {
+      setAutomationError("Automation catalog is not available.");
+      return;
+    }
+
+    setAutomationError(null);
+    setAutomationSuccess(null);
+    setAutomationSubmitting(true);
+
+    try {
+      const payload = serializeDraft(automationDraft);
+      if (!payload.triggerEvent || payload.actions.length === 0) {
+        setAutomationError("Select a trigger and at least one action.");
+        return;
+      }
+
+      const created = await createAutomationRule(payload);
+      setAutomationSuccess(`Rule created: ${created.id}`);
+      setAutomationDraft(createEmptyDraft(automationCatalog));
+    } catch (createError) {
+      setAutomationError(
+        createError instanceof Error ? createError.message : "Failed to create automation"
+      );
+    } finally {
+      setAutomationSubmitting(false);
+    }
+  }
+
+  function openAutomationModal(): void {
+    setAutomationError(null);
+    setAutomationSuccess(null);
+    if (automationCatalog) {
+      setAutomationDraft(createEmptyDraft(automationCatalog));
+    }
+    setAutomationModalOpen(true);
+  }
 
   return (
     <div className="min-h-screen p-4 md:p-6">
@@ -81,12 +142,12 @@ export function DashboardShell({
                 >
                   Marketplace
                 </button>
-                <a
-                  href="/automations"
+                <button
+                  onClick={openAutomationModal}
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white"
                 >
                   New Automation
-                </a>
+                </button>
               </div>
             </div>
           </header>
@@ -163,6 +224,72 @@ export function DashboardShell({
                 Open Full Marketplace
               </Link>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {automationModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-xl">Quick Create Automation</h2>
+              <button
+                onClick={() => setAutomationModalOpen(false)}
+                className="rounded-lg border border-black/10 px-3 py-1 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            {automationCatalogLoadError ? (
+              <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                {automationCatalogLoadError}
+              </p>
+            ) : automationCatalog ? (
+              <div className="mt-4 space-y-3">
+                <AutomationRuleBuilder
+                  catalog={automationCatalog}
+                  draft={automationDraft}
+                  onChange={setAutomationDraft}
+                  compact={true}
+                />
+
+                {automationError ? (
+                  <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {automationError}
+                  </p>
+                ) : null}
+
+                {automationSuccess ? (
+                  <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                    {automationSuccess}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Link
+                    href="/automations"
+                    className="rounded-xl border border-black/10 px-4 py-2 text-sm font-semibold"
+                    onClick={() => setAutomationModalOpen(false)}
+                  >
+                    Open Full Editor
+                  </Link>
+                  <button
+                    onClick={() => {
+                      void handleQuickCreate();
+                    }}
+                    disabled={automationSubmitting}
+                    className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {automationSubmitting ? "Creating..." : "Create Rule"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-xl bg-black/5 px-3 py-2 text-sm text-black/70">
+                Automation catalog unavailable.
+              </p>
+            )}
           </div>
         </div>
       ) : null}

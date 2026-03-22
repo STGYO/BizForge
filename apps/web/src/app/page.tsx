@@ -1,4 +1,5 @@
 import { DashboardShell, type DashboardPlugin } from "../components/dashboard-shell";
+import type { AutomationCatalog } from "../lib/automation-api";
 
 interface MarketplacePreviewPlugin {
   name: string;
@@ -84,9 +85,43 @@ async function loadMarketplacePreview(): Promise<{
   }
 }
 
+async function loadAutomationCatalog(): Promise<{
+  catalog: AutomationCatalog | null;
+  error: string | null;
+}> {
+  const baseUrl = process.env.NEXT_PUBLIC_CORE_API_URL ?? "http://localhost:4000";
+
+  try {
+    const response = await fetch(`${baseUrl}/api/automation/catalog`, {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      return {
+        catalog: null,
+        error: `Unable to load automation catalog (${response.status})`
+      };
+    }
+
+    const data = (await response.json()) as AutomationCatalog;
+    return {
+      catalog: data,
+      error: null
+    };
+  } catch {
+    return {
+      catalog: null,
+      error: "Unable to connect to core API"
+    };
+  }
+}
+
 export default async function Page() {
-  const [{ plugins, error }, { plugins: marketplacePlugins, error: marketplaceError }] =
-    await Promise.all([loadPlugins(), loadMarketplacePreview()]);
+  const [
+    { plugins, error },
+    { plugins: marketplacePlugins, error: marketplaceError },
+    { catalog: automationCatalog, error: automationCatalogError }
+  ] = await Promise.all([loadPlugins(), loadMarketplacePreview(), loadAutomationCatalog()]);
 
   return (
     <DashboardShell
@@ -94,6 +129,8 @@ export default async function Page() {
       pluginLoadError={error}
       marketplacePreview={marketplacePlugins}
       marketplaceLoadError={marketplaceError}
+      automationCatalog={automationCatalog}
+      automationCatalogLoadError={automationCatalogError}
     />
   );
 }

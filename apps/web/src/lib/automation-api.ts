@@ -18,6 +18,13 @@ export interface AutomationRule {
   enabled: boolean;
 }
 
+export interface AutomationRuleUpsertPayload {
+  triggerEvent: string;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+  enabled: boolean;
+}
+
 export interface AutomationCatalogTrigger {
   plugin: string;
   key: string;
@@ -92,13 +99,52 @@ export async function fetchAutomationCatalog(): Promise<AutomationCatalog> {
 }
 
 export async function createAutomationRule(
-  payload: Omit<AutomationRule, "id" | "organizationId">
+  payload: AutomationRuleUpsertPayload
 ): Promise<AutomationRule> {
   const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-bizforge-org-id": DEFAULT_ORG_ID
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  return (await response.json()) as AutomationRule;
+}
+
+export async function fetchAutomationRuleById(
+  ruleId: string,
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<AutomationRule> {
+  const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules/${ruleId}`, {
+    cache: "no-store",
+    headers: {
+      "x-bizforge-org-id": organizationId
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+
+  return (await response.json()) as AutomationRule;
+}
+
+export async function updateAutomationRule(
+  ruleId: string,
+  payload: Partial<AutomationRuleUpsertPayload>,
+  organizationId: string = DEFAULT_ORG_ID
+): Promise<AutomationRule> {
+  const response = await fetch(`${getCoreApiBaseUrl()}/api/automation/rules/${ruleId}`, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      "x-bizforge-org-id": organizationId
     },
     body: JSON.stringify(payload)
   });

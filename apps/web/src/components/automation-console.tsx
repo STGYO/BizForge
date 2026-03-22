@@ -1,13 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import {
+  AutomationRuleBuilder,
+  createDraftFromPayload,
+  createEmptyDraft,
+  serializeDraft,
+  type RuleDraft
+} from "./automation-rule-builder";
 import {
   type AutomationCatalog,
   type AutomationRule,
   createAutomationRule,
+  fetchAutomationRuleById,
   deleteAutomationRule,
   setAutomationRuleEnabled,
-  simulateAutomationRule
+  simulateAutomationRule,
+  updateAutomationRule
 } from "../lib/automation-api";
 
 interface AutomationConsoleProps {
@@ -20,67 +29,88 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
-
-  const [triggerEvent, setTriggerEvent] = useState(catalog.triggers[0]?.eventType ?? "");
-  const [conditionField, setConditionField] = useState("source");
-  const [conditionEquals, setConditionEquals] = useState("web");
-  const [actionSelection, setActionSelection] = useState(
-    catalog.actions.length > 0 ? `${catalog.actions[0]?.plugin}:${catalog.actions[0]?.key}` : ""
-  );
-  const [actionInputJson, setActionInputJson] = useState('{"customerId":"cust-1","offsetHours":24}');
-
-  const selectedAction = useMemo(() => {
-    const [plugin, actionKey] = actionSelection.split(":");
-    return { plugin: plugin ?? "", actionKey: actionKey ?? "" };
-  }, [actionSelection]);
+  const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<RuleDraft>(() => createEmptyDraft(catalog));
 
   async function handleCreateRule(): Promise<void> {
     setError(null);
     setSimulationMessage(null);
 
-    if (!triggerEvent || !selectedAction.plugin || !selectedAction.actionKey) {
-      setError("Choose a trigger and action before creating a rule.");
-      return;
-    }
-
-    let parsedInput: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(actionInputJson) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Action input must be a JSON object");
-      }
-      parsedInput = parsed as Record<string, unknown>;
-    } catch {
-      setError("Action input must be valid JSON object text.");
+    const payload = serializeDraft(draft);
+    if (!payload.triggerEvent || payload.actions.length === 0) {
+      setError("Choose a trigger and at least one action before creating a rule.");
       return;
     }
 
     setSubmitting(true);
     try {
-      const created = await createAutomationRule({
-        triggerEvent,
-        enabled: true,
-        conditions: [
-          {
-            field: conditionField,
-            equals: conditionEquals
-          }
-        ],
-        actions: [
-          {
-            plugin: selectedAction.plugin,
-            actionKey: selectedAction.actionKey,
-            input: parsedInput
-          }
-        ]
-      });
+      const created = await createAutomationRule(payload);
 
       setRules((current) => [created, ...current]);
+      setDraft(createEmptyDraft(catalog));
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create rule");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function beginEditRule(ruleId: string): Promise<void> {
+    setError(null);
+    setSimulationMessage(null);
+    setSubmitting(true);
+
+    try {
+      const rule = await fetchAutomationRuleById(ruleId);
+      setDraft(
+        createDraftFromPayload(
+          {
+            triggerEvent: rule.triggerEvent,
+            conditions: rule.conditions,
+            actions: rule.actions,
+            enabled: rule.enabled
+          },
+          catalog
+        )
+      );
+      setEditingRuleId(rule.id);
+      setEditorMode("edit");
+    } catch (hydrateError) {
+      setError(hydrateError instanceof Error ? hydrateError.message : "Failed to load rule for editing");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateRule(): Promise<void> {
+    if (!editingRuleId) {
+      return;
+    }
+
+    setError(null);
+    setSimulationMessage(null);
+    setSubmitting(true);
+
+    try {
+      const updated = await updateAutomationRule(editingRuleId, serializeDraft(draft));
+      setRules((current) => current.map((rule) => (rule.id === updated.id ? updated : rule)));
+      setEditorMode("create");
+      setEditingRuleId(null);
+      setDraft(createEmptyDraft(catalog));
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to update rule");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function cancelEdit(): void {
+    setEditorMode("create");
+    setEditingRuleId(null);
+    setDraft(createEmptyDraft(catalog));
+    setError(null);
+    setSimulationMessage(null);
   }
 
   async function handleToggleEnabled(rule: AutomationRule): Promise<void> {
@@ -138,80 +168,51 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-black/10 bg-white p-4">
-        <h2 className="font-display text-xl">Create Automation</h2>
+        <h2 className="font-display text-xl">
+          {editorMode === "edit" ? "Edit Automation" : "Create Automation"}
+        </h2>
         <p className="mt-2 text-sm text-black/70">
-          Bootstrap flow for rule creation using trigger, condition, and plugin action.
+          Compose trigger, conditions, and plugin actions with catalog-driven controls.
         </p>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="text-sm">
-            <span className="mb-1 block text-black/70">Trigger Event</span>
-            <select
-              className="w-full rounded-xl border border-black/10 bg-surface px-3 py-2"
-              value={triggerEvent}
-              onChange={(event) => setTriggerEvent(event.target.value)}
-            >
-              {catalog.triggers.map((trigger) => (
-                <option key={`${trigger.plugin}:${trigger.key}`} value={trigger.eventType}>
-                  {trigger.displayName} ({trigger.plugin})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <span className="mb-1 block text-black/70">Action</span>
-            <select
-              className="w-full rounded-xl border border-black/10 bg-surface px-3 py-2"
-              value={actionSelection}
-              onChange={(event) => setActionSelection(event.target.value)}
-            >
-              {catalog.actions.map((action) => (
-                <option key={`${action.plugin}:${action.key}`} value={`${action.plugin}:${action.key}`}>
-                  {action.displayName} ({action.plugin})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <span className="mb-1 block text-black/70">Condition Field</span>
-            <input
-              className="w-full rounded-xl border border-black/10 bg-surface px-3 py-2"
-              value={conditionField}
-              onChange={(event) => setConditionField(event.target.value)}
-            />
-          </label>
-
-          <label className="text-sm">
-            <span className="mb-1 block text-black/70">Condition Equals</span>
-            <input
-              className="w-full rounded-xl border border-black/10 bg-surface px-3 py-2"
-              value={conditionEquals}
-              onChange={(event) => setConditionEquals(event.target.value)}
-            />
-          </label>
-
-          <label className="text-sm md:col-span-2">
-            <span className="mb-1 block text-black/70">Action Input JSON</span>
-            <textarea
-              className="min-h-24 w-full rounded-xl border border-black/10 bg-surface px-3 py-2"
-              value={actionInputJson}
-              onChange={(event) => setActionInputJson(event.target.value)}
-            />
-          </label>
+        <div className="mt-4">
+          <AutomationRuleBuilder catalog={catalog} draft={draft} onChange={setDraft} />
         </div>
 
-        <button
-          type="button"
-          className="mt-4 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          onClick={() => {
-            void handleCreateRule();
-          }}
-          disabled={submitting}
-        >
-          {submitting ? "Creating..." : "Create Rule"}
-        </button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            onClick={() => {
+              if (editorMode === "edit") {
+                void handleUpdateRule();
+                return;
+              }
+
+              void handleCreateRule();
+            }}
+            disabled={submitting}
+          >
+            {submitting
+              ? editorMode === "edit"
+                ? "Saving..."
+                : "Creating..."
+              : editorMode === "edit"
+                ? "Save Changes"
+                : "Create Rule"}
+          </button>
+
+          {editorMode === "edit" ? (
+            <button
+              type="button"
+              className="rounded-xl border border-black/10 px-4 py-2 text-sm font-semibold"
+              onClick={cancelEdit}
+              disabled={submitting}
+            >
+              Cancel Edit
+            </button>
+          ) : null}
+        </div>
       </section>
 
       {(error || simulationMessage) && (
@@ -235,6 +236,15 @@ export function AutomationConsole({ initialRules, catalog }: AutomationConsolePr
                     <p className="text-xs text-black/60">{rule.id}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-black/10 px-3 py-1 text-xs font-semibold"
+                      onClick={() => {
+                        void beginEditRule(rule.id);
+                      }}
+                    >
+                      Edit
+                    </button>
                     <button
                       type="button"
                       className="rounded-lg bg-shell px-3 py-1 text-xs font-semibold text-white"
