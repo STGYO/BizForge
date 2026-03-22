@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { PluginEngine } from "./services/plugin-engine";
 import { InMemoryEventBus } from "./services/event-bus";
 import { AutomationEngine } from "./services/automation-engine";
+import { MigrationRunner } from "./services/migration-runner";
 import { registerCoreRoutes } from "./transport/core-routes";
 import { registerPluginRoutes } from "./transport/plugin-routes";
 import { checkPostgresHealth, getPgPool } from "./db/postgres";
@@ -54,6 +55,18 @@ export async function createServer(): Promise<FastifyInstance> {
     server.log.warn(
       "DATABASE_URL not configured or database unavailable. Using in-memory automation persistence."
     );
+  } else if (pgPool) {
+    const migrationRunner = new MigrationRunner({
+      client: pgPool,
+      pluginsDir: process.env.PLUGINS_DIR ?? "../../plugins",
+      coreSchemaPath: process.env.CORE_SCHEMA_PATH ?? "../../infra/db/001_core_schema.sql",
+      logger: {
+        info: (message, meta) => server.log.info(meta ?? {}, message),
+        warn: (message, meta) => server.log.warn(meta ?? {}, message)
+      }
+    });
+
+    await migrationRunner.run();
   }
 
   await registerCoreRoutes(server, runtime);
